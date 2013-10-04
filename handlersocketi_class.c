@@ -3,14 +3,16 @@
 #include "php_ini.h"
 #include "php_streams.h"
 #include "ext/standard/php_smart_str.h"
+#include "zend_exceptions.h"
 
 #include "php_verdep.h"
 #include "php_handlersocketi.h"
 #include "handlersocketi_exception.h"
 #include "handlersocketi_class.h"
-#include "util/common.h"
-#include "util/request.h"
-#include "util/response.h"
+#include "handlersocketi_index.h"
+#include "hs_common.h"
+#include "hs_request.h"
+#include "hs_response.h"
 
 ZEND_EXTERN_MODULE_GLOBALS(handlersocketi);
 

@@ -3,15 +3,16 @@
 #include "php_ini.h"
 #include "ext/standard/php_smart_str.h"
 #include "ext/standard/php_string.h"
+#include "zend_exceptions.h"
 
 #include "php_verdep.h"
 #include "php_handlersocketi.h"
 #include "handlersocketi_exception.h"
 #include "handlersocketi_class.h"
 #include "handlersocketi_index.h"
-#include "util/common.h"
-#include "util/request.h"
-#include "util/response.h"
+#include "hs_common.h"
+#include "hs_request.h"
+#include "hs_response.h"
 
 ZEND_EXTERN_MODULE_GLOBALS(handlersocketi);
 
@@ -371,8 +372,8 @@ static inline zval
     MAKE_STD_ZVAL(retval);
 
     if (Z_TYPE_P(val) == IS_ARRAY) {
-        long n, i;
         /*
+        long n, i;
         array_init(retval);
         n = zend_hash_num_elements(HASH_OF(*tmp));
         for (i = 0; i < n; i++) {

@@ -9,7 +9,7 @@
 #define hs_request_delim(buf) smart_str_appendc(buf, HS_CODE_DELIMITER)
 #define hs_request_next(buf) smart_str_appendc(buf, HS_CODE_EOL)
 
-void hs_request_string(smart_str *buf, char *str, long str_len);
+void hs_request_string(smart_str *buf, char *str, int str_len);
 
 void hs_request_array(smart_str *buf, HashTable *ht, int num, int i TSRMLS_DC);
 void hs_request_filter(smart_str *request, HashTable *ht TSRMLS_DC);

@@ -6,8 +6,8 @@ if (PHP_HANDLERSOCKETI != "no") {
      "handlersocketi_exception.c " +
      "handlersocketi_class.c " +
      "handlersocketi_index.c " +
-     "util/request.c " +
-     "util/response.c";
+     "hs_request.c " +
+     "hs_response.c";
    EXTENSION("handlersocketi", handlersocketi_source);
    PHP_INSTALL_HEADERS("ext/handlersocketi/", "php_handlersocketi.h handlersocketi_exception.h handlersocketi_class.h handlersocketi_index.h");
 }

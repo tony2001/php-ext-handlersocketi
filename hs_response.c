@@ -3,8 +3,8 @@
 #include "php_network.h"
 #include "ext/standard/php_smart_str.h"
 
-#include "common.h"
-#include "response.h"
+#include "hs_common.h"
+#include "hs_response.h"
 
 #define HS_SOCKET_BLOCK_SIZE 4096
 

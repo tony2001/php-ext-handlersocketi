@@ -2,8 +2,8 @@
 #include "php.h"
 #include "php_network.h"
 
-#include "common.h"
-#include "request.h"
+#include "hs_common.h"
+#include "hs_request.h"
 
 static inline void
 hs_request_zval_scalar(smart_str *buf, zval *val, int delim)
@@ -40,7 +40,7 @@ hs_request_zval_scalar(smart_str *buf, zval *val, int delim)
 }
 
 void
-hs_request_string(smart_str *buf, char *str, long str_len)
+hs_request_string(smart_str *buf, char *str, int str_len)
 {
     long i;
 

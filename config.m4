@@ -26,7 +26,7 @@ PHP_ARG_ENABLE(handlersocketi, whether to enable handlersocketi support,
 
 if test "$PHP_HANDLERSOCKETI" != "no"; then
 
-  PHP_NEW_EXTENSION(handlersocketi, handlersocketi.c handlersocketi_exception.c handlersocketi_class.c handlersocketi_index.c util/request.c util/response.c, $ext_shared)
+  PHP_NEW_EXTENSION(handlersocketi, handlersocketi.c handlersocketi_exception.c handlersocketi_class.c handlersocketi_index.c hs_request.c hs_response.c, $ext_shared)
 
   ifdef([PHP_INSTALL_HEADERS],
   [
