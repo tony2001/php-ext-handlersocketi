@@ -356,7 +356,7 @@ ZEND_METHOD(HandlerSocketi, __construct)
 ZEND_METHOD(HandlerSocketi, auth)
 {
     char *key, *type = NULL;
-    long key_len, type_len = 0;
+    int key_len, type_len = 0;
     hs_obj_t *hs;
     smart_str request = {0};
 

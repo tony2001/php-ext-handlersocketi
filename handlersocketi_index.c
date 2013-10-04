@@ -671,8 +671,8 @@ hs_array_to_in_filter(HashTable *ht, zval *filter, zval **filters,
 
 static inline void
 hs_index_object_init(hs_index_obj_t *hsi,
-                     zval *link, char *db, long db_len,
-                     char *table, long table_len,
+                     zval *link, char *db, int db_len,
+                     char *table, int table_len,
                      zval *fields, zval *options TSRMLS_DC)
 {
     int id = 0;
@@ -889,8 +889,8 @@ PHP_HANDLERSOCKETI_API zend_class_entry
 
 PHP_HANDLERSOCKETI_API void
 handlersocketi_create_index(zval *return_value,
-                            zval *link, char *db, long db_len,
-                            char *table, long table_len,
+                            zval *link, char *db, int db_len,
+                            char *table, int table_len,
                             zval *fields, zval *options TSRMLS_DC)
 {
     object_init_ex(return_value, hs_ce_index);
