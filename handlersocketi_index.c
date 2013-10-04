@@ -327,17 +327,15 @@ static inline zval
                 switch ((*tmp)->type) {
                     case IS_STRING:
                         if (Z_STRLEN_PP(tmp) > 0) {
-                            smart_str_appendl_ex(&comma, Z_STRVAL_PP(tmp),
-                                                 Z_STRLEN_PP(tmp), 1);
-                            smart_str_appendl_ex(&comma, ",", strlen(","), 1);
+                            smart_str_appendl(&comma, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
+                            smart_str_appendl(&comma, ",", strlen(","));
                         }
                         break;
                     default:
                         convert_to_string(*tmp);
                         if (Z_STRLEN_PP(tmp) > 0) {
-                            smart_str_appendl_ex(&comma, Z_STRVAL_PP(tmp),
-                                                 Z_STRLEN_PP(tmp), 1);
-                            smart_str_appendl_ex(&comma, ",", strlen(","), 1);
+                            smart_str_appendl(&comma, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
+                            smart_str_appendl(&comma, ",", strlen(","));
                         }
                         break;
                 }
@@ -348,19 +346,19 @@ static inline zval
         }
     } else if (Z_TYPE_P(val) == IS_STRING) {
         if (Z_STRLEN_P(val) > 0) {
-            smart_str_appendl_ex(&comma, Z_STRVAL_P(val), Z_STRLEN_P(val), 1);
+            smart_str_appendl(&comma, Z_STRVAL_P(val), Z_STRLEN_P(val));
         }
     } else {
         convert_to_string(val);
         if (Z_STRLEN_P(val) > 0) {
-            smart_str_appendl_ex(&comma, Z_STRVAL_P(val), Z_STRLEN_P(val), 1);
+            smart_str_appendl(&comma, Z_STRVAL_P(val), Z_STRLEN_P(val));
         }
     }
 
-    MAKE_STD_ZVAL(retval);
-    ZVAL_STRINGL(retval, comma.c, comma.len, 1);
-    smart_str_free(&comma);
+    smart_str_0(&comma);
 
+    MAKE_STD_ZVAL(retval);
+    ZVAL_STRINGL(retval, comma.c, comma.len, 0);
     return retval;
 }
 
