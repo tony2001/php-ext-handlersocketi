@@ -12,7 +12,7 @@
 void hs_request_string(smart_str *buf, char *str, int str_len);
 
 void hs_request_array(smart_str *buf, HashTable *ht, int num, int i TSRMLS_DC);
-void hs_request_filter(smart_str *request, HashTable *ht TSRMLS_DC);
+void hs_request_filter(smart_str *request, smart_str *hash_index, HashTable *ht TSRMLS_DC);
 
 void hs_request_command(smart_str *buf, long id, zval * operate, zval *criteria,
                         long limit, long offset, zval *filters, long in_key,

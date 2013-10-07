@@ -3,11 +3,9 @@
 #include "php_ini.h"
 #include "ext/standard/php_smart_str.h"
 #include "ext/standard/php_string.h"
-#include "zend_exceptions.h"
 
 #include "php_verdep.h"
 #include "php_handlersocketi.h"
-#include "handlersocketi_exception.h"
 #include "handlersocketi_class.h"
 #include "handlersocketi_index.h"
 #include "hs_common.h"
@@ -153,15 +151,21 @@ const zend_function_entry hs_index_methods[] = {
     ZEND_FE_END
 };
 
-#define HS_EXCEPTION(...)                                       \
-    zend_throw_exception_ex(handlersocketi_get_ce_exception(),   \
-                            0 TSRMLS_CC,                        \
-                            "HandlerSocketi_Index::" __VA_ARGS__)
+#define HS_EXCEPTION_EX(nullify, ...)                           \
+	{                                                           \
+		zval *obj;                                              \
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, __VA_ARGS__); \
+		if (nullify) {                                          \
+			obj = getThis();                                    \
+			ZVAL_NULL(obj);                                     \
+		}                                                       \
+	}
+
+#define HS_EXCEPTION(...) HS_EXCEPTION_EX(0, __VA_ARGS__)
 
 #define HS_CHECK_OBJECT(object, classname)                        \
     if (!(object)) {                                              \
-        HS_EXCEPTION("The " #classname " object has not been "    \
-                     "correctly initialized by its constructor"); \
+        php_error_docref(NULL TSRMLS_CC, E_WARNING, "The " #classname " object has not been correctly initialized by its constructor"); \
         RETURN_FALSE;                                             \
     }
 
@@ -669,30 +673,31 @@ hs_array_to_in_filter(HashTable *ht, zval *filter, zval **filters,
 }
 
 static inline void
-hs_index_object_init(hs_index_obj_t *hsi,
+hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr,
                      zval *link, char *db, int db_len,
                      char *table, int table_len,
                      zval *fields, zval *options TSRMLS_DC)
 {
-    int id = 0;
+    int id = 0, old_id;
     zval *index = NULL, *fields_str = NULL, *filter = NULL, *retval;
     php_stream *stream;
     long timeout;
     smart_str request = {0};
+	smart_str hash_index = {0};
 
     if (db_len == 0) {
-        HS_EXCEPTION("__construct(): invalid database %s", db);
+        HS_EXCEPTION_EX(1, "invalid database %s", db);
         return;
     }
 
     if (table_len == 0) {
-        HS_EXCEPTION("__construct(): invalid table %s", table);
+        HS_EXCEPTION_EX(1, "invalid table %s", table);
         return;
     }
 
     fields_str = hs_zval_to_comma_string(fields);
     if (!fields_str) {
-        HS_EXCEPTION("__construct(): invalid fields");
+        HS_EXCEPTION_EX(1, "invalid fields");
         return;
     }
 
@@ -730,7 +735,7 @@ hs_index_object_init(hs_index_obj_t *hsi,
         if (filter) {
             zval_ptr_dtor(&filter);
         }
-        HS_EXCEPTION("__construct(): invalid index");
+        HS_EXCEPTION_EX(1, "invalid index");
         return;
     }
 
@@ -742,7 +747,7 @@ hs_index_object_init(hs_index_obj_t *hsi,
     //hsi = (hs_index_obj_t *)zend_object_store_get_object(getThis() TSRMLS_CC);
     //HS_CHECK_OBJECT(hsi, HandlersocketiIndex);
     if (!hsi) {
-        HS_EXCEPTION("The HandlerSocketi_Index object has not been "
+        HS_EXCEPTION_EX(1, "The HandlerSocketi_Index object has not been "
                      "correctly initialized by its constructor");
         return;
     }
@@ -794,8 +799,11 @@ hs_index_object_init(hs_index_obj_t *hsi,
     }
 
     /* stream */
-    stream = handlersocketi_object_store_get_stream(hsi->link);
-    timeout = handlersocketi_object_store_get_timeout(hsi->link);
+    stream = handlersocketi_object_store_get_stream(hsi->link TSRMLS_CC);
+	if (!stream) {
+		RETURN_FALSE;
+	}
+    timeout = handlersocketi_object_store_get_timeout(hsi->link TSRMLS_CC);
 
     hs_request_string(&request, HS_PROTOCOL_OPEN, 1);
     hs_request_delim(&request);
@@ -807,52 +815,77 @@ hs_index_object_init(hs_index_obj_t *hsi,
     /* db */
     hs_request_string(&request, db, db_len);
     hs_request_delim(&request);
+	smart_str_appendl(&hash_index, db, db_len);
+	smart_str_appendc(&hash_index, '|');
 
     /* table */
     hs_request_string(&request, table, table_len);
     hs_request_delim(&request);
+	smart_str_appendl(&hash_index, table, table_len);
+	smart_str_appendc(&hash_index, '|');
 
     /* index */
     hs_request_string(&request, Z_STRVAL_P(index), Z_STRLEN_P(index));
     hs_request_delim(&request);
+	smart_str_appendl(&hash_index, Z_STRVAL_P(index), Z_STRLEN_P(index));
+	smart_str_appendc(&hash_index, '|');
 
     /* fields */
     hs_request_string(&request, Z_STRVAL_P(fields_str), Z_STRLEN_P(fields_str));
+	{
+		char *lfields_str;
+
+		/* make sure we're case insensitive */
+		lfields_str = zend_str_tolower_dup(Z_STRVAL_P(fields_str), Z_STRLEN_P(fields_str));
+		smart_str_appendl(&hash_index, lfields_str, Z_STRLEN_P(fields_str));
+		efree(lfields_str);
+	}
+	smart_str_appendc(&hash_index, '|');
 
     /* filters */
     if (hsi->filter) {
-        hs_request_filter(&request, HASH_OF(hsi->filter) TSRMLS_CC);
+        hs_request_filter(&request, &hash_index, HASH_OF(hsi->filter) TSRMLS_CC);
     }
 
     /* eol */
     hs_request_next(&request);
+	smart_str_0(&hash_index);
 
-    /* request: send */
-    if (hs_request_send(stream, &request TSRMLS_CC) < 0) {
-        smart_str_free(&request);
-        zval_ptr_dtor(&index);
-        if (fields_str) {
-            zval_ptr_dtor(&fields_str);
-        }
-        HS_EXCEPTION("__construct(): invalid request send");
-        return;
-    }
+	/* first we look into the hash, then try to open the index for real */
+	old_id = handlersocketi_object_store_get_index_id(link, hash_index.c, hash_index.len TSRMLS_CC);
+	if (old_id >= 0) {
+		/* ok, we have this index in the hash, no need to open it again */
+		hsi->id = old_id;
+	} else {
+		/* request: send */
+		if (hs_request_send(stream, &request TSRMLS_CC) < 0) {
+			HS_EXCEPTION_EX(1, "failed to send request");
+			goto cleanup;
+		}
 
-    smart_str_free(&request);
+		/* read response */
+		MAKE_STD_ZVAL(retval);
+		hs_response_value(stream, timeout, retval, hsi->error, 0 TSRMLS_CC);
+		if (Z_TYPE_P(retval) == IS_BOOL && Z_LVAL_P(retval) == 0) {
+			zval_ptr_dtor(&retval);
+			HS_EXCEPTION_EX(1, "unable to open index: %d: %s",
+					id,
+					hsi->error == NULL ?
+					"Unknown error" : Z_STRVAL_P(hsi->error));
+			goto cleanup;
+		}
+		zval_ptr_dtor(&retval);
 
-    /* response */
-    MAKE_STD_ZVAL(retval);
-    hs_response_value(stream, timeout, retval, hsi->error, 0 TSRMLS_CC);
-    if (Z_TYPE_P(retval) == IS_BOOL && Z_LVAL_P(retval) == 0) {
-        HS_EXCEPTION("__construct(): unable to open index: %ld: %s",
-                     id,
-                     hsi->error == NULL ?
-                     "Unknwon error" : Z_STRVAL_P(hsi->error));
-        return;
-    }
+		/* success, add the id to the hash */
+		handlersocketi_object_store_store_index_id(link, hash_index.c, hash_index.len, id TSRMLS_CC);
+	}
 
     /* cleanup */
-    zval_ptr_dtor(&retval);
+cleanup:
+
+    smart_str_free(&request);
+    smart_str_free(&hash_index);
+
     zval_ptr_dtor(&index);
     if (fields_str) {
         zval_ptr_dtor(&fields_str);
@@ -894,7 +927,7 @@ handlersocketi_create_index(zval *return_value,
 {
     object_init_ex(return_value, hs_ce_index);
 
-    hs_index_object_init(zend_object_store_get_object(return_value TSRMLS_CC),
+    hs_index_object_init(zend_object_store_get_object(return_value TSRMLS_CC), return_value,
                          link, db, db_len, table, table_len,
                          fields, options TSRMLS_CC);
 }
@@ -903,195 +936,17 @@ ZEND_METHOD(HandlerSocketi_Index, __construct)
 {
     zval *link;
     char *db, *table;
-    int db_len, table_len, id = 0;
+    int db_len, table_len;
     zval *fields, *options = NULL;
-    zval *index = NULL, *fields_str = NULL, *filter = NULL;
-    hs_index_obj_t *hsi;
-    php_stream *stream;
-    long timeout;
-    smart_str request = {0};
 
     if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Ossz|z",
                               &link, handlersocketi_get_ce(),
                               &db, &db_len, &table, &table_len,
                               &fields, &options) == FAILURE) {
-        HS_EXCEPTION("__construct(): expects parameters");
-        zval *object = getThis();
-        ZVAL_NULL(object);
         return;
     }
 
-    if (db_len == 0) {
-        HS_EXCEPTION("__construct(): invalid database %s", db);
-        return;
-    }
-
-    if (table_len == 0) {
-        HS_EXCEPTION("__construct(): invalid table %s", table);
-        return;
-    }
-
-    fields_str = hs_zval_to_comma_string(fields);
-    if (!fields_str) {
-        HS_EXCEPTION("__construct(): invalid fields");
-        return;
-    }
-
-    if (options && Z_TYPE_P(options) == IS_ARRAY) {
-        zval **tmp;
-        if (zend_hash_find(Z_ARRVAL_P(options), "id",
-                           sizeof("id"), (void **)&tmp) == SUCCESS) {
-            convert_to_long_ex(tmp);
-            id = Z_LVAL_PP(tmp);
-        }
-
-        if (zend_hash_find(Z_ARRVAL_P(options), "index",
-                           sizeof("index"), (void **)&tmp) == SUCCESS) {
-            convert_to_string_ex(tmp);
-            MAKE_STD_ZVAL(index);
-            ZVAL_STRINGL(index, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp), 1);
-        }
-
-        if (zend_hash_find(Z_ARRVAL_P(options), "filter",
-                           sizeof("filter"), (void **)&tmp) == SUCCESS) {
-            filter = hs_zval_to_comma_array(*tmp);
-        }
-    }
-
-    if (!index) {
-        MAKE_STD_ZVAL(index);
-        ZVAL_STRINGL(index, "PRIMARY", sizeof("PRIMARY")-1, 1);
-    } else if (Z_STRLEN_P(index) <= 0) {
-        if (index) {
-            zval_ptr_dtor(&index);
-        }
-        if (fields_str) {
-            zval_ptr_dtor(&fields_str);
-        }
-        if (filter) {
-            zval_ptr_dtor(&filter);
-        }
-        HS_EXCEPTION("__construct(): invalid index");
-        return;
-    }
-
-    if (id <= 0) {
-        id = HANDLERSOCKETI_G(id)++;
-    }
-
-    /* handerlsocket: object */
-    hsi = (hs_index_obj_t *)zend_object_store_get_object(getThis() TSRMLS_CC);
-    HS_CHECK_OBJECT(hsi, HandlerSocketi_Index);
-
-    hsi->link = link;
-    zval_add_ref(&hsi->link);
-
-    /* id */
-    hsi->id = id;
-
-    /* name */
-    MAKE_STD_ZVAL(hsi->name);
-    *hsi->name = *index;
-    zval_copy_ctor(hsi->name);
-
-    /* db */
-    MAKE_STD_ZVAL(hsi->db);
-    ZVAL_STRINGL(hsi->db, db, db_len, 1);
-
-    /* table */
-    MAKE_STD_ZVAL(hsi->table);
-    ZVAL_STRINGL(hsi->table, table, db_len, 1);
-
-    /* field */
-    MAKE_STD_ZVAL(hsi->field);
-    if (Z_TYPE_P(fields) == IS_STRING) {
-        zval delim, *arr;
-        MAKE_STD_ZVAL(arr);
-        array_init(arr);
-
-        ZVAL_STRINGL(&delim, ",", strlen(","), 0);
-        php_explode(&delim, fields, arr, LONG_MAX);
-
-        hsi->field_num = zend_hash_num_elements(HASH_OF(arr));
-
-        *hsi->field = *arr;
-        zval_copy_ctor(hsi->field);
-        zval_ptr_dtor(&arr);
-    } else {
-        hsi->field_num = zend_hash_num_elements(HASH_OF(fields));
-        *hsi->field = *fields;
-        zval_copy_ctor(hsi->field);
-    }
-
-    if (filter) {
-        MAKE_STD_ZVAL(hsi->filter);
-        *hsi->filter = *filter;
-        zval_copy_ctor(hsi->filter);
-    }
-
-    /* stream */
-    stream = handlersocketi_object_store_get_stream(hsi->link);
-    timeout = handlersocketi_object_store_get_timeout(hsi->link);
-
-    hs_request_string(&request, HS_PROTOCOL_OPEN, 1);
-    hs_request_delim(&request);
-
-    /* id */
-    hs_request_long(&request, hsi->id);
-    hs_request_delim(&request);
-
-    /* db */
-    hs_request_string(&request, db, db_len);
-    hs_request_delim(&request);
-
-    /* table */
-    hs_request_string(&request, table, table_len);
-    hs_request_delim(&request);
-
-    /* index */
-    hs_request_string(&request, Z_STRVAL_P(index), Z_STRLEN_P(index));
-    hs_request_delim(&request);
-
-    /* fields */
-    hs_request_string(&request, Z_STRVAL_P(fields_str), Z_STRLEN_P(fields_str));
-
-    /* filters */
-    if (hsi->filter) {
-        hs_request_filter(&request, HASH_OF(hsi->filter) TSRMLS_CC);
-    }
-
-    /* eol */
-    hs_request_next(&request);
-
-    /* request: send */
-    if (hs_request_send(stream, &request TSRMLS_CC) < 0) {
-        smart_str_free(&request);
-        zval_ptr_dtor(&index);
-        if (fields_str) {
-            zval_ptr_dtor(&fields_str);
-        }
-        HS_EXCEPTION("__construct(): invalid request send");
-        return;
-    }
-
-    smart_str_free(&request);
-
-    /* response */
-    hs_response_value(stream, timeout, return_value, hsi->error, 0 TSRMLS_CC);
-
-    if (Z_TYPE_P(return_value) == IS_BOOL && Z_LVAL_P(return_value) == 0) {
-        HS_EXCEPTION("__construct(): unable to open index: %ld: %s",
-                     id,
-                     hsi->error == NULL ?
-                     "Unknwon error" : Z_STRVAL_P(hsi->error));
-        return;
-    }
-
-    /* cleanup */
-    zval_ptr_dtor(&index);
-    if (fields_str) {
-        zval_ptr_dtor(&fields_str);
-    }
+    handlersocketi_create_index(return_value, getThis(), db, db_len, table, table_len, fields, options TSRMLS_CC);
 }
 
 ZEND_METHOD(HandlerSocketi_Index, find)
@@ -1130,8 +985,11 @@ ZEND_METHOD(HandlerSocketi_Index, find)
     }
 
     /* stream */
-    stream = handlersocketi_object_store_get_stream(hsi->link);
-    timeout = handlersocketi_object_store_get_timeout(hsi->link);
+    stream = handlersocketi_object_store_get_stream(hsi->link TSRMLS_CC);
+	if (!stream) {
+		RETURN_FALSE;
+	}
+    timeout = handlersocketi_object_store_get_timeout(hsi->link TSRMLS_CC);
 
     /* operate : criteria */
     MAKE_STD_ZVAL(operate);
@@ -1166,7 +1024,7 @@ ZEND_METHOD(HandlerSocketi_Index, find)
     /* exception */
     if (safe > 0 &&
         Z_TYPE_P(return_value) == IS_BOOL && Z_LVAL_P(return_value) == 0) {
-        HS_EXCEPTION("find(): response error: %s",
+        HS_EXCEPTION("response error: %s",
                      hsi->error == NULL ?
                      "Unknown error" : Z_STRVAL_P(hsi->error));
         RETURN_FALSE;
@@ -1244,8 +1102,11 @@ ZEND_METHOD(HandlerSocketi_Index, insert)
                    "HandlerSocketi_Index::insert(): invalid field count");
     }
 
-    stream = handlersocketi_object_store_get_stream(hsi->link);
-    timeout = handlersocketi_object_store_get_timeout(hsi->link);
+    stream = handlersocketi_object_store_get_stream(hsi->link TSRMLS_CC);
+	if (!stream) {
+		RETURN_FALSE;
+	}
+    timeout = handlersocketi_object_store_get_timeout(hsi->link TSRMLS_CC);
 
     /* operate */
     MAKE_STD_ZVAL(operate);
@@ -1310,8 +1171,11 @@ ZEND_METHOD(HandlerSocketi_Index, update)
     }
 
     /* stream */
-    stream = handlersocketi_object_store_get_stream(hsi->link);
-    timeout = handlersocketi_object_store_get_timeout(hsi->link);
+    stream = handlersocketi_object_store_get_stream(hsi->link TSRMLS_CC);
+	if (!stream) {
+		RETURN_FALSE;
+	}
+    timeout = handlersocketi_object_store_get_timeout(hsi->link TSRMLS_CC);
 
     /* operate : criteria */
     MAKE_STD_ZVAL(operate);
@@ -1382,9 +1246,10 @@ ZEND_METHOD(HandlerSocketi_Index, update)
     /* exception */
     if (safe > 0 &&
         Z_TYPE_P(return_value) == IS_BOOL && Z_LVAL_P(return_value) == 0) {
-        HS_EXCEPTION("update(): response error: %s",
+        HS_EXCEPTION("response error: %s",
                      hsi->error == NULL ?
                      "Unknown error" : Z_STRVAL_P(hsi->error));
+		RETURN_FALSE;
     }
 }
 
@@ -1423,8 +1288,11 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
     }
 
     /* stream */
-    stream = handlersocketi_object_store_get_stream(hsi->link);
-    timeout = handlersocketi_object_store_get_timeout(hsi->link);
+    stream = handlersocketi_object_store_get_stream(hsi->link TSRMLS_CC);
+	if (!stream) {
+		RETURN_FALSE;
+	}
+    timeout = handlersocketi_object_store_get_timeout(hsi->link TSRMLS_CC);
 
     /* operate : criteria */
     MAKE_STD_ZVAL(operate);
@@ -1463,7 +1331,7 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
     /* exception */
     if (safe > 0 &&
         Z_TYPE_P(return_value) == IS_BOOL && Z_LVAL_P(return_value) == 0) {
-        HS_EXCEPTION("remove(): response error: %s",
+        HS_EXCEPTION("response error: %s",
                      hsi->error == NULL ?
                      "Unknown error" : Z_STRVAL_P(hsi->error));
     }
@@ -1810,8 +1678,11 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
     }
 
     /* stream */
-    stream = handlersocketi_object_store_get_stream(hsi->link);
-    timeout = handlersocketi_object_store_get_timeout(hsi->link);
+    stream = handlersocketi_object_store_get_stream(hsi->link TSRMLS_CC);
+	if (!stream) {
+		RETURN_FALSE;
+	}
+    timeout = handlersocketi_object_store_get_timeout(hsi->link TSRMLS_CC);
 
     /* request: send */
     if (err < 0  || hs_request_send(stream, &request TSRMLS_CC) < 0) {
