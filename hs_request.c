@@ -110,7 +110,7 @@ hs_request_filter(smart_str *request, smart_str *hash_index, HashTable *ht TSRML
         zend_hash_internal_pointer_reset_ex(ht, &pos);
         while (zend_hash_get_current_data_ex(ht,
                                              (void **)&tmp, &pos) == SUCCESS) {
-            switch ((*tmp)->type) {
+            switch (Z_TYPE_PP(tmp)) {
                 case IS_STRING:
                     hs_request_string(request, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
 					smart_str_appendl(hash_index, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
@@ -120,7 +120,7 @@ hs_request_filter(smart_str *request, smart_str *hash_index, HashTable *ht TSRML
 					smart_str_append_long(hash_index, Z_LVAL_PP(tmp));
                     break;
                 default:
-                    convert_to_string(*tmp);
+                    convert_to_string_ex(tmp);
                     hs_request_string(request, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
 					smart_str_appendl(hash_index, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
                     break;

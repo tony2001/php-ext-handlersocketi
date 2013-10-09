@@ -3,8 +3,8 @@
 
 PHP_HANDLERSOCKETI_API int handlersocketi_register_index(TSRMLS_D);
 PHP_HANDLERSOCKETI_API zend_class_entry *handlersocketi_get_ce_index(void);
-PHP_HANDLERSOCKETI_API void handlersocketi_create_index(
-    zval *return_value, zval *link, char *db, int db_len,
-    char *table, int table_len, zval *fields, zval *options TSRMLS_DC);
+PHP_HANDLERSOCKETI_API void handlersocketi_create_index(zval *return_value, zval *link, char *db, int db_len, char *table, int table_len, zval *fields, zval *options TSRMLS_DC);
+zval *hs_zval_to_comma_string(zval *val);
+zval *hs_zval_to_comma_array(zval *val);
 
 #endif /* HANDLERSOCKETI_INDEX_H */

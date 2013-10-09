@@ -312,8 +312,7 @@ hs_index_object_clone(zval *this_ptr TSRMLS_DC)
     return new_ov;
 }
 
-static inline zval
-*hs_zval_to_comma_string(zval *val)
+zval *hs_zval_to_comma_string(zval *val)
 {
     smart_str comma = {0};
     zval *retval;
@@ -366,8 +365,7 @@ static inline zval
     return retval;
 }
 
-static inline zval
-*hs_zval_to_comma_array(zval *val)
+zval *hs_zval_to_comma_array(zval *val)
 {
     zval *retval;
 
@@ -801,7 +799,9 @@ hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr,
     /* stream */
     stream = handlersocketi_object_store_get_stream(hsi->link TSRMLS_CC);
 	if (!stream) {
-		RETURN_FALSE;
+		zval *this = getThis();
+		ZVAL_NULL(this);
+		return;
 	}
     timeout = handlersocketi_object_store_get_timeout(hsi->link TSRMLS_CC);
 

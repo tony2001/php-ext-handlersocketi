@@ -40,16 +40,15 @@ ZEND_END_ARG_INFO()
 ZEND_METHOD(HandlerSocketi, __construct);
 ZEND_METHOD(HandlerSocketi, auth);
 ZEND_METHOD(HandlerSocketi, open_index);
+ZEND_METHOD(HandlerSocketi, has_open_index);
 
 const zend_function_entry hs_methods[] = {
-    ZEND_ME(HandlerSocketi, __construct,
-            arginfo_hs_method__construct, ZEND_ACC_PUBLIC|ZEND_ACC_CTOR)
-    ZEND_ME(HandlerSocketi, auth,
-            arginfo_hs_method_open_index, ZEND_ACC_PUBLIC)
-    ZEND_ME(HandlerSocketi, open_index,
-            arginfo_hs_method_open_index, ZEND_ACC_PUBLIC)
-    ZEND_MALIAS(HandlerSocketi, openIndex, open_index,
-                arginfo_hs_method_open_index, ZEND_ACC_PUBLIC)
+    ZEND_ME(HandlerSocketi, __construct, arginfo_hs_method__construct, ZEND_ACC_PUBLIC|ZEND_ACC_CTOR)
+    ZEND_ME(HandlerSocketi, auth, arginfo_hs_method_auth, ZEND_ACC_PUBLIC)
+    ZEND_ME(HandlerSocketi, open_index, arginfo_hs_method_open_index, ZEND_ACC_PUBLIC)
+    ZEND_ME(HandlerSocketi, has_open_index, arginfo_hs_method_open_index, ZEND_ACC_PUBLIC)
+    ZEND_MALIAS(HandlerSocketi, openIndex, open_index, arginfo_hs_method_open_index, ZEND_ACC_PUBLIC)
+    ZEND_MALIAS(HandlerSocketi, hasOpenIndex, has_open_index, arginfo_hs_method_open_index, ZEND_ACC_PUBLIC)
     ZEND_FE_END
 };
 
@@ -323,6 +322,101 @@ handlersocketi_object_store_get_index_id(zval *link, const char *hash_index, int
 }
 
 PHP_HANDLERSOCKETI_API int
+handlersocketi_object_store_get_index_hash(const char *db, int db_len, const char *table, int table_len, zval *fields, zval *options, char **hash_index_str, int *hash_index_len)
+{
+	smart_str hash_index = {0};
+	char *index = NULL;
+	zval *filter = NULL, *fields_str;
+	int index_len;
+
+    fields_str = hs_zval_to_comma_string(fields);
+	if (!fields_str) {
+		return FAILURE;
+	}
+
+	smart_str_appendl(&hash_index, db, db_len);
+	smart_str_appendc(&hash_index, '|');
+
+	smart_str_appendl(&hash_index, table, table_len);
+	smart_str_appendc(&hash_index, '|');
+
+	if (options) {
+		zval **tmp;
+
+        if (zend_hash_find(Z_ARRVAL_P(options), "index", sizeof("index"), (void **)&tmp) == SUCCESS) {
+			index = Z_STRVAL_PP(tmp);
+			index_len = Z_STRLEN_PP(tmp);
+			if (!index_len) {
+				zval_ptr_dtor(&fields_str);
+				smart_str_free(&hash_index);
+				return FAILURE;
+			}
+        }
+
+        if (zend_hash_find(Z_ARRVAL_P(options), "filter", sizeof("filter"), (void **)&tmp) == SUCCESS) {
+            filter = hs_zval_to_comma_array(*tmp);
+        }
+	}
+
+    if (!index) {
+		smart_str_appendl(&hash_index, "PRIMARY", sizeof("PRIMARY")-1);
+	} else {
+		smart_str_appendl(&hash_index, index, index_len);
+	}
+	smart_str_appendc(&hash_index, '|');
+
+	/* make sure we're case insensitive */
+	zend_str_tolower(Z_STRVAL_P(fields_str), Z_STRLEN_P(fields_str));
+	smart_str_appendl(&hash_index, Z_STRVAL_P(fields_str), Z_STRLEN_P(fields_str));
+	smart_str_appendc(&hash_index, '|');
+
+    if (filter) {
+		zval **tmp;
+		HashTable *ht;
+		HashPosition pos;
+		long n, i = 0;
+
+		ht = HASH_OF(filter);
+		n = zend_hash_num_elements(ht);
+		if (n >= 0) {
+			smart_str_appendc(&hash_index, '|');
+
+			zend_hash_internal_pointer_reset_ex(ht, &pos);
+			while (zend_hash_get_current_data_ex(ht, (void **)&tmp, &pos) == SUCCESS) {
+				switch (Z_TYPE_PP(tmp)) {
+					case IS_STRING:
+						smart_str_appendl(&hash_index, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
+						break;
+					case IS_LONG:
+						smart_str_append_long(&hash_index, Z_LVAL_PP(tmp));
+						break;
+					default:
+						convert_to_string_ex(tmp);
+						smart_str_appendl(&hash_index, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
+						break;
+				}
+
+				if (++i != n) {
+					smart_str_appendc(&hash_index, '|');
+				}
+				zend_hash_move_forward_ex(ht, &pos);
+			}
+		}
+    }
+
+	smart_str_0(&hash_index);
+	zval_ptr_dtor(&fields_str);
+	if (filter) {
+		zval_ptr_dtor(&filter);
+	}
+
+	*hash_index_str = hash_index.c;
+	*hash_index_len = hash_index.len;
+
+	return SUCCESS;
+}
+
+PHP_HANDLERSOCKETI_API int
 handlersocketi_object_store_store_index_id(zval *link, const char *hash_index, int hash_index_len, int id TSRMLS_DC)
 {
     hs_obj_t *hs;
@@ -481,12 +575,34 @@ ZEND_METHOD(HandlerSocketi, open_index)
     int db_len, table_len;
     zval *fields, *options = NULL;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssz|z",
-                              &db, &db_len, &table, &table_len,
-                              &fields, &options) == FAILURE) {
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssz|z", &db, &db_len, &table, &table_len, &fields, &options) == FAILURE) {
         return;
     }
 
-    handlersocketi_create_index(return_value, getThis(), db, db_len,
-                                table, table_len, fields, options TSRMLS_CC);
+    handlersocketi_create_index(return_value, getThis(), db, db_len, table, table_len, fields, options TSRMLS_CC);
+}
+
+ZEND_METHOD(HandlerSocketi, has_open_index)
+{
+	char *db, *table;
+	int db_len, table_len, hash_index_len, ret, id;
+	zval *fields, *options = NULL;
+	char *hash_index;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssz|z", &db, &db_len, &table, &table_len, &fields, &options) == FAILURE) {
+		return;
+	}
+
+	ret = handlersocketi_object_store_get_index_hash(db, db_len, table, table_len, fields, options, &hash_index, &hash_index_len);
+	if (ret != SUCCESS) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "invalid index parameters passed");
+		RETURN_FALSE;
+	}
+
+	id = handlersocketi_object_store_get_index_id(getThis(), hash_index, hash_index_len TSRMLS_CC);
+	efree(hash_index);
+	if (id < 0) {
+		RETURN_FALSE;
+	}
+	RETURN_TRUE;
 }
