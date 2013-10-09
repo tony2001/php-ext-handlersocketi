@@ -86,7 +86,7 @@ hs_object_free_storage(void *object TSRMLS_DC)
 
 #define HS_CHECK_CONNECTION(object, classname)                    \
 	if (!(object)->conn || !(object)->conn->stream) {             \
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Using dead connection object of class " #classname); \
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Trying to use an object with already closed connection"); \
 		RETURN_FALSE;                                             \
 	}
 
@@ -510,7 +510,7 @@ ZEND_METHOD(HandlerSocketi, __construct)
 	hs->conn = conn;
 
     if (hs_object_connection(hs) != SUCCESS) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "unable to connect %s", Z_STRVAL_P(hs->server));
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "unable to connect to %s", Z_STRVAL_P(hs->server));
         zval *object = getThis();
         ZVAL_NULL(object);
 		return;
