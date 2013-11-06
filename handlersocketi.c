@@ -59,6 +59,7 @@ ZEND_MINIT_FUNCTION(handlersocketi)
 
     handlersocketi_register_class(TSRMLS_C);
     handlersocketi_register_index(TSRMLS_C);
+    handlersocketi_register_exception(TSRMLS_C);
 
     /*
     REGISTER_LONG_CONSTANT("MSGPACKI_MODE_ORIGIN", PHP_MSGPACKI_MODE_ORIGIN,
