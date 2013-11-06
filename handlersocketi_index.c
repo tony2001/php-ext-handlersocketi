@@ -3,9 +3,11 @@
 #include "php_ini.h"
 #include "ext/standard/php_smart_str.h"
 #include "ext/standard/php_string.h"
+#include "zend_exceptions.h"
 
 #include "php_verdep.h"
 #include "php_handlersocketi.h"
+#include "handlersocketi_exception.h"
 #include "handlersocketi_class.h"
 #include "handlersocketi_index.h"
 #include "hs_common.h"
@@ -151,10 +153,11 @@ const zend_function_entry hs_index_methods[] = {
     ZEND_FE_END
 };
 
+
 #define HS_EXCEPTION_EX(nullify, ...)                           \
 	{                                                           \
 		zval *obj;                                              \
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, __VA_ARGS__); \
+		zend_throw_exception_ex(handlersocketi_get_ce_exception(), 0 TSRMLS_CC, "HandlerSocketi_Index::" __VA_ARGS__); \
 		if (nullify) {                                          \
 			obj = getThis();                                    \
 			ZVAL_NULL(obj);                                     \
@@ -165,7 +168,7 @@ const zend_function_entry hs_index_methods[] = {
 
 #define HS_CHECK_OBJECT(object, classname)                        \
     if (!(object)) {                                              \
-        php_error_docref(NULL TSRMLS_CC, E_WARNING, "The " #classname " object has not been correctly initialized by its constructor"); \
+		HS_EXCEPTION("The " #classname " object has not been correctly initialized by its constructor"); \
         RETURN_FALSE;                                             \
     }
 

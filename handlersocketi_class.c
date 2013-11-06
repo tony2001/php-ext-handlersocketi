@@ -78,15 +78,18 @@ hs_object_free_storage(void *object TSRMLS_DC)
     efree(object);
 }
 
+#define HS_EXCEPTION(...)                                                                                  \
+    zend_throw_exception_ex(handlersocketi_get_ce_exception(), 0 TSRMLS_C, "HandlerSocketi::" __VA_ARGS__)
+
 #define HS_CHECK_OBJECT(object, classname)                        \
 	if (!(object)) {                                              \
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "The " #classname " object has not been correctly initialized by its constructor"); \
+		HS_EXCEPTION("The " #classname " object has not been correctly initialized by its constructor"); \
 		RETURN_FALSE;                                             \
 	}
 
 #define HS_CHECK_CONNECTION(object, classname)                    \
 	if (!(object)->conn || !(object)->conn->stream) {             \
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Trying to use an object with already closed connection"); \
+		HS_EXCEPTION("Trying to uset a " #classname " object with already closed connection"); \
 		RETURN_FALSE;                                             \
 	}
 
@@ -288,7 +291,6 @@ PHP_HANDLERSOCKETI_API php_stream
     if (hs && hs->conn) {
         return hs->conn->stream;
     } else {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Trying to use an object with already closed connection");
         return NULL;
     }
 }
@@ -445,7 +447,7 @@ ZEND_METHOD(HandlerSocketi, __construct)
     }
 
     if (!host || host_len <= 0) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "__construct(): no host name");
+		HS_EXCEPTION("__construct(): no host name");
         zval *object = getThis();
         ZVAL_NULL(object);
         return;
@@ -510,7 +512,7 @@ ZEND_METHOD(HandlerSocketi, __construct)
 	hs->conn = conn;
 
     if (hs_object_connection(hs) != SUCCESS) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "unable to connect to %s", Z_STRVAL_P(hs->server));
+		HS_EXCEPTION("__construct(): unable to connect to %s", Z_STRVAL_P(hs->server));
         zval *object = getThis();
         ZVAL_NULL(object);
 		return;
@@ -595,7 +597,7 @@ ZEND_METHOD(HandlerSocketi, has_open_index)
 
 	ret = handlersocketi_object_store_get_index_hash(db, db_len, table, table_len, fields, options, &hash_index, &hash_index_len);
 	if (ret != SUCCESS) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "invalid index parameters passed");
+		HS_EXCEPTION("has_open_index(): invalid index parameters passed");
 		RETURN_FALSE;
 	}
 
