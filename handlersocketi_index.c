@@ -793,11 +793,13 @@ hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr,
         zval_copy_ctor(hsi->field);
     }
 
-    if (filter) {
-        MAKE_STD_ZVAL(hsi->filter);
-        *hsi->filter = *filter;
-        zval_copy_ctor(hsi->filter);
-    }
+	MAKE_STD_ZVAL(hsi->filter);
+	if (filter) {
+		*hsi->filter = *filter;
+		zval_copy_ctor(hsi->filter);
+	} else {
+		array_init(hsi->filter);
+	}
 
     /* stream */
     stream = handlersocketi_object_store_get_stream(hsi->link TSRMLS_CC);
