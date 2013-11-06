@@ -26,7 +26,7 @@ static void hs_conn_dtor_ex(zend_rsrc_list_entry *rsrc, int persistent TSRMLS_DC
 {
 	hs_conn_t *conn = (hs_conn_t *)rsrc->ptr;
 
-	if (!conn->is_persistent) {
+	if (!conn->is_persistent && conn->stream) {
 		php_stream_close(conn->stream);
 	}
 
