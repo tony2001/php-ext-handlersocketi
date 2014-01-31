@@ -197,10 +197,8 @@ hs_object_connection(hs_obj_t *obj)
     }
 
     /* non-blocking */
-    if (php_stream_set_option(obj->conn->stream, PHP_STREAM_OPTION_BLOCKING,
-                              0, NULL) == -1) {
-        zend_error(E_WARNING,
-                   "HandlerSocketi: Un set non-blocking mode on a stream");
+    if (php_stream_set_option(obj->conn->stream, PHP_STREAM_OPTION_BLOCKING, 0, NULL) == -1) {
+        zend_error(E_WARNING, "HandlerSocketi: failed to turn on non-blocking mode");
     }
 
 	php_stream_auto_cleanup(obj->conn->stream);

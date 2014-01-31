@@ -25,9 +25,7 @@ hs_response_select(php_stream *stream, long timeout TSRMLS_DC)
 
     FD_ZERO(&fds);
 
-    if (php_stream_cast(stream,
-                        PHP_STREAM_AS_FD_FOR_SELECT|PHP_STREAM_CAST_INTERNAL,
-                        (void*)&max_fd, 1) == SUCCESS && max_fd != -1) {
+    if (php_stream_cast(stream, PHP_STREAM_AS_FD_FOR_SELECT|PHP_STREAM_CAST_INTERNAL, (void*)&max_fd, 1) == SUCCESS && max_fd != -1) {
         PHP_SAFE_FD_SET(max_fd, &fds);
         max_set_count++;
     }
@@ -54,7 +52,7 @@ hs_response_select(php_stream *stream, long timeout TSRMLS_DC)
 }
 
 static inline long
-hs_response_recv(php_stream *stream, char *recv, size_t size TSRMLS_DC)
+hs_response_recv(php_stream *stream, long timeout, char *recv, size_t size TSRMLS_DC)
 {
     long ret;
 #ifdef HS_DEBUG
@@ -62,8 +60,18 @@ hs_response_recv(php_stream *stream, char *recv, size_t size TSRMLS_DC)
     smart_str debug = {0};
 #endif
 
-    ret  = php_stream_read(stream, recv, size);
+retry:
+
+    ret = php_stream_read(stream, recv, size);
     if (ret <= 0) {
+		if (errno == EAGAIN) {
+			errno = 0;
+			if (hs_response_select(stream, timeout TSRMLS_CC) < 0) {
+				return -1;
+			} else {
+				goto retry;
+			}
+		}
         return -1;
     }
 
@@ -103,24 +111,20 @@ static inline zval
 }
 
 void
-hs_response_value(php_stream *stream, long timeout, zval *return_value,
-                  zval *error, int modify TSRMLS_DC)
+hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *error, int modify TSRMLS_DC)
 {
     char *recv;
     long i, j, len;
     zval *val, *item;
+	int eol_found = 0;
 
     smart_str response = {0};
     long n = 0, block_size = HS_SOCKET_BLOCK_SIZE;
     int escape = 0, flag = 0, null = 0;
     long ret[2] = {-1, -1};
 
-    if (hs_response_select(stream, timeout TSRMLS_CC) < 0) {
-        ZVAL_BOOL(return_value, 0);
-    }
-
     recv = emalloc(block_size+1);
-    len = hs_response_recv(stream, recv, block_size TSRMLS_CC);
+    len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC);
     if (len <= 0) {
         efree(recv);
         ZVAL_BOOL(return_value, 0);
@@ -130,6 +134,9 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
     do {
         for (i = 0; i < len; i++) {
             if (recv[i] == HS_CODE_DELIMITER || recv[i] == HS_CODE_EOL) {
+				if (recv[i] == HS_CODE_EOL) {
+					eol_found = 1;
+				}
                 val = hs_response_zval(&response TSRMLS_CC);
                 convert_to_long(val);
                 ret[flag] = Z_LVAL_P(val);
@@ -145,11 +152,15 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
             }
         }
 
+		if (eol_found) {
+			break;
+		}
+
         if (flag > 1) {
             break;
         } else {
             i = 0;
-            len = hs_response_recv(stream, recv, block_size TSRMLS_CC);
+            len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC);
             if (len <= 0) {
                 break;
             }
@@ -157,7 +168,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
     } while (1);
 
     if (ret[0] != 0) {
-        if (recv[i] != HS_CODE_EOL) {
+        if (recv[i-1] != HS_CODE_EOL) {
             smart_str err = {0};
 
             i++;
@@ -170,6 +181,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
             do {
                 for (j = i; j < len; j++) {
                     if (recv[j] == HS_CODE_EOL) {
+						eol_found = 1;
                         break;
                     }
 
@@ -177,20 +189,18 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
                         escape = 1;
                     } else if (escape) {
                         escape = 0;
-                        smart_str_appendc(
-                            &err, (unsigned char)recv[j]-HS_CODE_ESCAPE_ADD);
+                        smart_str_appendc(&err, (unsigned char)recv[j]-HS_CODE_ESCAPE_ADD);
                     } else {
                         smart_str_appendc(&err, recv[j]);
                     }
                 }
 
-                if (recv[j] == HS_CODE_EOL) {
-                    break;
-                }
+				if (eol_found) {
+					break;
+				}
 
                 i = 0;
-            } while ((len = hs_response_recv(
-                          stream, recv, block_size TSRMLS_CC)) > 0);
+            } while ((len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC)) > 0);
 
             if (error) {
                 ZVAL_STRINGL(error, err.c, err.len, 1);
@@ -203,11 +213,10 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
 
         efree(recv);
         ZVAL_BOOL(return_value, 0);
-
         return;
     }
 
-    if (ret[1] == 1 && recv[i] == HS_CODE_EOL) {
+    if (ret[1] == 1 && i > 0 && recv[i-1] == HS_CODE_EOL) {
         efree(recv);
         ZVAL_BOOL(return_value, 1);
         return;
@@ -230,6 +239,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
         do {
             for (j = i; j < len; j++) {
                 if (recv[j] == HS_CODE_EOL) {
+					eol_found = 1;
                     ZVAL_STRINGL(return_value, response.c, response.len, 1);
                     break;
                 }
@@ -238,19 +248,18 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
                     escape = 1;
                 } else if (escape) {
                     escape = 0;
-                    smart_str_appendc(
-                        &response, (unsigned char)recv[j]-HS_CODE_ESCAPE_ADD);
+                    smart_str_appendc(&response, (unsigned char)recv[j]-HS_CODE_ESCAPE_ADD);
                 } else {
                     smart_str_appendc(&response, recv[j]);
                 }
             }
 
-            if (recv[j] == HS_CODE_EOL) {
-                break;
-            }
+			if (eol_found) {
+				break;
+			}
+
             i = 0;
-        } while ((len = hs_response_recv(
-                      stream, recv, block_size TSRMLS_CC)) > 0);
+        } while ((len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC)) > 0);
 
         convert_to_long(return_value);
     } else {
@@ -269,8 +278,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
                     if (response.len == 0 && null == 1) {
                         add_next_index_null(item);
                     } else {
-                        add_next_index_stringl(item, response.c,
-                                               response.len, 1);
+                        add_next_index_stringl(item, response.c, response.len, 1);
                     }
 
                     n++;
@@ -281,16 +289,16 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
                     }
 
                     smart_str_free(&response);
-
                     continue;
                 } else if (recv[j] == HS_CODE_EOL) {
+					eol_found = 1;
                     if (response.len == 0 && null == 1) {
                         add_next_index_null(item);
                     } else {
-                        add_next_index_stringl(item, response.c,
-                                               response.len, 1);
+                        add_next_index_stringl(item, response.c, response.len, 1);
                     }
                     null = 0;
+
                     break;
                 }
 
@@ -307,12 +315,12 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
                 }
             }
 
-            if (recv[j] == HS_CODE_EOL) {
-                break;
-            }
+			if (eol_found) {
+				break;
+			}
+
             i = 0;
-        } while ((len = hs_response_recv(
-                      stream, recv, block_size TSRMLS_CC)) > 0);
+        } while ((len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC)) > 0);
     }
 
     efree(recv);
@@ -321,8 +329,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value,
 }
 
 void
-hs_response_multi(php_stream *stream, long timeout, zval *return_value,
-                  zval *error, zval *mreq TSRMLS_DC)
+hs_response_multi(php_stream *stream, long timeout, zval *return_value, zval *error, zval *mreq TSRMLS_DC)
 {
     char *recv;
     long i, len, count;
@@ -330,12 +337,8 @@ hs_response_multi(php_stream *stream, long timeout, zval *return_value,
     smart_str response = {0};
     long block_size = HS_SOCKET_BLOCK_SIZE;
 
-    if (hs_response_select(stream, timeout TSRMLS_CC) < 0) {
-        ZVAL_BOOL(return_value, 0);
-    }
-
     recv = emalloc(block_size+1);
-    len = hs_response_recv(stream, recv, block_size TSRMLS_CC);
+    len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC);
     if (len <= 0) {
         efree(recv);
         RETVAL_BOOL(0);
@@ -384,7 +387,7 @@ hs_response_multi(php_stream *stream, long timeout, zval *return_value,
             } else {
                 j = 0;
                 current = 0;
-                len = hs_response_recv(stream, recv, block_size TSRMLS_CC);
+                len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC);
                 if (len <= 0) {
                     break;
                 }
@@ -429,8 +432,7 @@ hs_response_multi(php_stream *stream, long timeout, zval *return_value,
                     j = 0;
                     current = 0;
 
-                } while ((len = hs_response_recv(
-                              stream, recv, block_size TSRMLS_CC)) > 0);
+                } while ((len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC)) > 0);
 
                 add_next_index_stringl(error, err.c, err.len, 1);
 
@@ -504,8 +506,7 @@ hs_response_multi(php_stream *stream, long timeout, zval *return_value,
                 j = 0;
                 current = 0;
 
-            } while ((len = hs_response_recv(
-                          stream, recv, block_size TSRMLS_CC)) > 0);
+            } while ((len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC)) > 0);
 
             convert_to_long(num_z);
 
@@ -575,8 +576,7 @@ hs_response_multi(php_stream *stream, long timeout, zval *return_value,
                 j = 0;
                 current = 0;
 
-            } while ((len = hs_response_recv(
-                          stream, recv, block_size TSRMLS_CC)) > 0);
+            } while ((len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC)) > 0);
         }
 
         current++;
