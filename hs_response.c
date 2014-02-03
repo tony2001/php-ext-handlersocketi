@@ -168,7 +168,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *er
     } while (1);
 
     if (ret[0] != 0) {
-        if (recv[i-1] != HS_CODE_EOL) {
+        if (recv[i] != HS_CODE_EOL) {
             smart_str err = {0};
 
             i++;
@@ -216,7 +216,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *er
         return;
     }
 
-    if (ret[1] == 1 && i > 0 && recv[i-1] == HS_CODE_EOL) {
+    if (ret[1] == 1 && recv[i] == HS_CODE_EOL) {
         efree(recv);
         ZVAL_BOOL(return_value, 1);
         return;
