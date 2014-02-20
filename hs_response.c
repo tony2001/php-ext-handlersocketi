@@ -67,7 +67,7 @@ retry:
 		if (errno == EAGAIN) {
 			errno = 0;
 			if (hs_response_select(stream, timeout TSRMLS_CC) < 0) {
-				return -1;
+				return -2; /* ETIMEDOUT */
 			} else {
 				goto retry;
 			}
@@ -110,8 +110,7 @@ static inline zval
     return val;
 }
 
-void
-hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *error, int modify TSRMLS_DC)
+int hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *error, int modify TSRMLS_DC)
 {
     char *recv;
     long i, j, len;
@@ -128,7 +127,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *er
     if (len <= 0) {
         efree(recv);
         ZVAL_BOOL(return_value, 0);
-        return;
+        return len;
     }
 
     do {
@@ -213,13 +212,13 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *er
 
         efree(recv);
         ZVAL_BOOL(return_value, 0);
-        return;
+        return -1;
     }
 
     if (ret[1] == 1 && recv[i] == HS_CODE_EOL) {
         efree(recv);
         ZVAL_BOOL(return_value, 1);
-        return;
+        return -1;
     }
 
     i++;
@@ -233,7 +232,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *er
         if (i > 0 && recv[i-1] == HS_CODE_EOL) {
             efree(recv);
             ZVAL_LONG(return_value, 0);
-            return;
+            return -1;
         }
 
         do {
@@ -267,7 +266,7 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *er
 
         if (i > 0 && recv[i-1] == HS_CODE_EOL) {
             efree(recv);
-            return;
+            return -1;
         }
 
         item = hs_response_add(return_value TSRMLS_CC);
@@ -326,10 +325,10 @@ hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *er
     efree(recv);
 
     smart_str_free(&response);
+	return 1;
 }
 
-void
-hs_response_multi(php_stream *stream, long timeout, zval *return_value, zval *error, zval *mreq TSRMLS_DC)
+int hs_response_multi(php_stream *stream, long timeout, zval *return_value, zval *error, zval *mreq TSRMLS_DC)
 {
     char *recv;
     long i, len, count;
@@ -585,4 +584,10 @@ hs_response_multi(php_stream *stream, long timeout, zval *return_value, zval *er
     efree(recv);
 
     smart_str_free(&response);
+
+	if (len < 0) {
+		return len;
+	}
+
+	return 1;
 }

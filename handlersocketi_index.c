@@ -862,6 +862,8 @@ hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr,
 		/* ok, we have this index in the hash, no need to open it again */
 		hsi->id = old_id;
 	} else {
+		int res;
+
 		/* request: send */
 		if (hs_request_send(stream, &request TSRMLS_CC) < 0) {
 			HS_EXCEPTION_EX(1, "failed to send request");
@@ -870,13 +872,18 @@ hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr,
 
 		/* read response */
 		MAKE_STD_ZVAL(retval);
-		hs_response_value(stream, timeout, retval, hsi->error, 0 TSRMLS_CC);
+		res = hs_response_value(stream, timeout, retval, hsi->error, 0 TSRMLS_CC);
+		if (res == -2) {
+			zval *obj;
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "HandlerSocketi_Index::find() has timed out when reading server response");
+			obj = getThis();
+			ZVAL_NULL(obj);
+			goto cleanup;
+		}
+
 		if (Z_TYPE_P(retval) == IS_BOOL && Z_LVAL_P(retval) == 0) {
 			zval_ptr_dtor(&retval);
-			HS_EXCEPTION_EX(1, "unable to open index: %d: %s",
-					id,
-					hsi->error == NULL ?
-					"Unknown error" : Z_STRVAL_P(hsi->error));
+			HS_EXCEPTION_EX(1, "unable to open index: %d: %s", id, hsi->error == NULL ?	"Unknown error" : Z_STRVAL_P(hsi->error));
 			goto cleanup;
 		}
 		zval_ptr_dtor(&retval);
@@ -965,6 +972,7 @@ ZEND_METHOD(HandlerSocketi_Index, find)
     php_stream *stream;
     long timeout;
     smart_str request = {0};
+	int res = 0;
 
     if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z|z",
                               &query, &options) == FAILURE) {
@@ -1016,8 +1024,7 @@ ZEND_METHOD(HandlerSocketi_Index, find)
         ZVAL_BOOL(return_value, 0);
     } else {
         /* response */
-        hs_response_value(stream, timeout, return_value,
-                          hsi->error, 0 TSRMLS_CC);
+        res = hs_response_value(stream, timeout, return_value, hsi->error, 0 TSRMLS_CC);
     }
 
     zval_ptr_dtor(&operate);
@@ -1025,6 +1032,14 @@ ZEND_METHOD(HandlerSocketi_Index, find)
         zval_ptr_dtor(&filters);
     }
     smart_str_free(&request);
+
+	if (res == -2) {
+		zval *obj;
+		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "HandlerSocketi_Index::find() has timed out when reading server response");
+		obj = getThis();
+		ZVAL_NULL(obj);
+		return;
+	}
 
     /* exception */
     if (safe > 0 &&
@@ -1350,6 +1365,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
     HashPosition pos;
     zval **val;
     int err = -1;
+	int res;
 
     hs_index_obj_t *hsi;
     php_stream *stream;
@@ -1698,9 +1714,17 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
     smart_str_free(&request);
 
     /* response */
-    hs_response_multi(stream, timeout, return_value, hsi->error, mreq TSRMLS_CC);
+    res = hs_response_multi(stream, timeout, return_value, hsi->error, mreq TSRMLS_CC);
 
     zval_ptr_dtor(&mreq);
+
+	if (res == -2) {
+		zval *obj;
+;		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "HandlerSocketi_Index::multi() has timed out when reading server response");
+		obj = getThis();
+		ZVAL_NULL(obj);
+		return;
+	}
 }
 
 ZEND_METHOD(HandlerSocketi_Index, get_error)
