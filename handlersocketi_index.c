@@ -740,7 +740,7 @@ hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr,
         return;
     }
 
-    if (id <= 0) {
+    if (id < 0) {
         id = HANDLERSOCKETI_G(id)++;
     }
 
