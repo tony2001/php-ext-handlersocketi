@@ -866,18 +866,20 @@ hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr,
 
 		/* request: send */
 		if (hs_request_send(stream, &request TSRMLS_CC) < 0) {
-			HS_EXCEPTION_EX(1, "failed to send request");
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to send request");
 			goto cleanup;
 		}
 
 		/* read response */
 		MAKE_STD_ZVAL(retval);
 		res = hs_response_value(stream, timeout, retval, hsi->error, 0 TSRMLS_CC);
+
+		if (res == -1) {
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to read server response");
+			return;
+		}
 		if (res == -2) {
-			zval *obj;
-			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "HandlerSocketi_Index::find() has timed out when reading server response");
-			obj = getThis();
-			ZVAL_NULL(obj);
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "timeout while reading server response");
 			goto cleanup;
 		}
 
@@ -1021,7 +1023,13 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 
     /* request: send */
     if (hs_request_send(stream, &request TSRMLS_CC) < 0) {
-        ZVAL_BOOL(return_value, 0);
+		zval_ptr_dtor(&operate);
+		if (filters) {
+			zval_ptr_dtor(&filters);
+		}
+		smart_str_free(&request);
+		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to send request");
+        RETURN_FALSE;
     } else {
         /* response */
         res = hs_response_value(stream, timeout, return_value, hsi->error, 0 TSRMLS_CC);
@@ -1033,11 +1041,12 @@ ZEND_METHOD(HandlerSocketi_Index, find)
     }
     smart_str_free(&request);
 
+	if (res == -1) {
+		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to read server response");
+		return;
+	}
 	if (res == -2) {
-		zval *obj;
-		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "HandlerSocketi_Index::find() has timed out when reading server response");
-		obj = getThis();
-		ZVAL_NULL(obj);
+		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "timeout while reading server response");
 		return;
 	}
 
@@ -1141,11 +1150,23 @@ ZEND_METHOD(HandlerSocketi_Index, insert)
 
     /* request: send */
     if (hs_request_send(stream, &request TSRMLS_CC) < 0) {
-        ZVAL_BOOL(return_value, 0);
+		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to send request");
+		RETURN_FALSE;
     } else {
         /* response */
-        hs_response_value(stream, timeout, return_value,
-                          hsi->error, 1 TSRMLS_CC);
+		int res;
+
+        res = hs_response_value(stream, timeout, return_value, hsi->error, 1 TSRMLS_CC);
+
+		if (res == -1) {
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to read server response");
+			return;
+		}
+		if (res == -2) {
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "timeout while when reading server response");
+			return;
+		}
+
     }
 
    zval_ptr_dtor(&operate);
@@ -1244,11 +1265,22 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 
         /* request: send */
         if (hs_request_send(stream, &request TSRMLS_CC) < 0) {
-            ZVAL_BOOL(return_value, 0);
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to send request");
+			RETURN_FALSE;
         } else {
+			int res;
             /* response */
-            hs_response_value(stream, timeout, return_value,
+            res = hs_response_value(stream, timeout, return_value,
                               hsi->error, modify TSRMLS_CC);
+
+			if (res == -1) {
+				zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to read server response");
+				return;
+			}
+			if (res == -2) {
+				zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "timeout while reading server response");
+				return;
+			}
         }
     } else {
         ZVAL_BOOL(return_value, 0);
@@ -1335,11 +1367,27 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
 
     /* request: send */
     if (hs_request_send(stream, &request TSRMLS_CC) < 0) {
-        ZVAL_BOOL(return_value, 0);
+		zval_ptr_dtor(&operate);
+		if (filters) {
+			zval_ptr_dtor(&filters);
+		}
+		smart_str_free(&request);
+		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to send request");
+		RETURN_FALSE;
     } else {
+		int res;
         /* response */
-        hs_response_value(stream, timeout, return_value,
+        res = hs_response_value(stream, timeout, return_value,
                           hsi->error, 1 TSRMLS_CC);
+
+		if (res == -1) {
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to read server response");
+			return;
+		}
+		if (res == -2) {
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "timeout while reading server response");
+			return;
+		}
     }
 
     zval_ptr_dtor(&operate);
@@ -1707,6 +1755,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 
     /* request: send */
     if (err < 0  || hs_request_send(stream, &request TSRMLS_CC) < 0) {
+		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "failed to send request");
         smart_str_free(&request);
         zval_ptr_dtor(&mreq);
         RETURN_FALSE;
@@ -1719,10 +1768,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
     zval_ptr_dtor(&mreq);
 
 	if (res == -2) {
-		zval *obj;
-;		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "HandlerSocketi_Index::multi() has timed out when reading server response");
-		obj = getThis();
-		ZVAL_NULL(obj);
+;		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0 TSRMLS_CC, "timeout while reading server response");
 		return;
 	}
 }

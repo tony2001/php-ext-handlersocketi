@@ -218,7 +218,7 @@ int hs_response_value(php_stream *stream, long timeout, zval *return_value, zval
     if (ret[1] == 1 && recv[i] == HS_CODE_EOL) {
         efree(recv);
         ZVAL_BOOL(return_value, 1);
-        return -1;
+        return 1;
     }
 
     i++;
@@ -232,7 +232,7 @@ int hs_response_value(php_stream *stream, long timeout, zval *return_value, zval
         if (i > 0 && recv[i-1] == HS_CODE_EOL) {
             efree(recv);
             ZVAL_LONG(return_value, 0);
-            return -1;
+            return 1;
         }
 
         do {
@@ -266,7 +266,7 @@ int hs_response_value(php_stream *stream, long timeout, zval *return_value, zval
 
         if (i > 0 && recv[i-1] == HS_CODE_EOL) {
             efree(recv);
-            return -1;
+            return 1;
         }
 
         item = hs_response_add(return_value TSRMLS_CC);
