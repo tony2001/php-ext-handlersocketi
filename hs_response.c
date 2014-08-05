@@ -336,7 +336,7 @@ int hs_response_multi(php_stream *stream, long timeout, zval *return_value, zval
     smart_str response = {0};
     long block_size = HS_SOCKET_BLOCK_SIZE;
 
-    recv = emalloc(block_size+1);
+    recv = ecalloc(1, block_size + 1);
     len = hs_response_recv(stream, timeout, recv, block_size TSRMLS_CC);
     if (len <= 0) {
         efree(recv);
