@@ -29,6 +29,6 @@ PHP_HANDLERSOCKETI_API php_stream *handlersocketi_object_store_get_stream(zval *
 PHP_HANDLERSOCKETI_API long handlersocketi_object_store_get_timeout(zval *link TSRMLS_DC);
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_id(zval *link, const char *hash_index, int hash_index_len TSRMLS_DC);
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_store_index_id(zval *link, const char *hash_index, int hash_index_len, int id TSRMLS_DC);
-PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_hash(const char *db, int db_len, const char *table, int table_len, zval *fields, zval *filter, char **hash_index_str, int *hash_index_len);
+PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_hash(const char *db, int db_len, const char *table, int table_len, zval *fields, zval *filter, char **hash_index_str, int *hash_index_len TSRMLS_DC);
 
 #endif /* HANDLERSOCKETI_CLASS_H */

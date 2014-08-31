@@ -3,11 +3,13 @@
 #include "php_ini.h"
 #include "php_streams.h"
 #include "ext/standard/php_smart_str.h"
+#include "Zend/zend_exceptions.h"
 
 #include "php_verdep.h"
 #include "php_handlersocketi.h"
 #include "handlersocketi_class.h"
 #include "handlersocketi_index.h"
+#include "handlersocketi_exception.h"
 #include "hs_common.h"
 #include "hs_request.h"
 #include "hs_response.h"
@@ -79,7 +81,7 @@ hs_object_free_storage(void *object TSRMLS_DC)
 }
 
 #define HS_EXCEPTION(...)                                                                                  \
-    zend_throw_exception_ex(handlersocketi_get_ce_exception(), 0 TSRMLS_C, "HandlerSocketi::" __VA_ARGS__)
+    zend_throw_exception_ex(handlersocketi_get_ce_exception(), 0 TSRMLS_CC, "HandlerSocketi::" __VA_ARGS__)
 
 #define HS_CHECK_OBJECT(object, classname)                        \
 	if (!(object)) {                                              \
@@ -131,7 +133,7 @@ hs_object_new_ex(zend_class_entry *ce, hs_obj_t **ptr TSRMLS_DC)
 }
 
 static inline int
-hs_object_connection(hs_obj_t *obj)
+hs_object_connection(hs_obj_t *obj TSRMLS_DC)
 {
     char *hashkey = NULL;
     char *errstr = NULL;
@@ -247,7 +249,7 @@ hs_object_clone(zval *this_ptr TSRMLS_DC)
 		new_obj->conn = ecalloc(1, sizeof(hs_conn_t));
 		zend_hash_init(&new_obj->conn->open_indices, 16, NULL, NULL, 0);
 
-		hs_object_connection(new_obj);
+		hs_object_connection(new_obj TSRMLS_CC);
 	}
     return new_ov;
 }
@@ -322,7 +324,7 @@ handlersocketi_object_store_get_index_id(zval *link, const char *hash_index, int
 }
 
 PHP_HANDLERSOCKETI_API int
-handlersocketi_object_store_get_index_hash(const char *db, int db_len, const char *table, int table_len, zval *fields, zval *options, char **hash_index_str, int *hash_index_len)
+handlersocketi_object_store_get_index_hash(const char *db, int db_len, const char *table, int table_len, zval *fields, zval *options, char **hash_index_str, int *hash_index_len TSRMLS_DC)
 {
 	smart_str hash_index = {0};
 	char *index = NULL;
@@ -505,11 +507,11 @@ ZEND_METHOD(HandlerSocketi, __construct)
 		conn = pemalloc(sizeof(hs_conn_t), 0);
 		conn->is_persistent = 0;
 		zend_hash_init(&conn->open_indices, 16, NULL, NULL, 0);
-		conn->rsrc_id = zend_list_insert(conn, le_hs_conn);
+		conn->rsrc_id = zend_list_insert(conn, le_hs_conn TSRMLS_CC);
 	}
 	hs->conn = conn;
 
-    if (hs_object_connection(hs) != SUCCESS) {
+    if (hs_object_connection(hs TSRMLS_CC) != SUCCESS) {
 		HS_EXCEPTION("__construct(): unable to connect to %s", Z_STRVAL_P(hs->server));
         zval *object = getThis();
         ZVAL_NULL(object);
@@ -593,7 +595,7 @@ ZEND_METHOD(HandlerSocketi, has_open_index)
 		return;
 	}
 
-	ret = handlersocketi_object_store_get_index_hash(db, db_len, table, table_len, fields, options, &hash_index, &hash_index_len);
+	ret = handlersocketi_object_store_get_index_hash(db, db_len, table, table_len, fields, options, &hash_index, &hash_index_len TSRMLS_CC);
 	if (ret != SUCCESS) {
 		HS_EXCEPTION("has_open_index(): invalid index parameters passed");
 		RETURN_FALSE;

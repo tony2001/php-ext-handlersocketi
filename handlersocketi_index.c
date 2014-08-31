@@ -315,7 +315,7 @@ hs_index_object_clone(zval *this_ptr TSRMLS_DC)
     return new_ov;
 }
 
-zval *hs_zval_to_comma_string(zval *val)
+zval *hs_zval_to_comma_string(zval *val TSRMLS_DC)
 {
     smart_str comma = {0};
     zval *retval;
@@ -368,7 +368,7 @@ zval *hs_zval_to_comma_string(zval *val)
     return retval;
 }
 
-zval *hs_zval_to_comma_array(zval *val)
+zval *hs_zval_to_comma_array(zval *val TSRMLS_DC)
 {
     zval *retval;
 
@@ -405,7 +405,7 @@ zval *hs_zval_to_comma_array(zval *val)
 }
 
 static inline int
-hs_get_options_long(HashTable *options, char *item, long def TSRMLS_DC)
+hs_get_options_long(HashTable *options, char *item, long def)
 {
     zval **tmp;
 
@@ -696,7 +696,7 @@ hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr,
         return;
     }
 
-    fields_str = hs_zval_to_comma_string(fields);
+    fields_str = hs_zval_to_comma_string(fields TSRMLS_CC);
     if (!fields_str) {
         HS_EXCEPTION_EX(1, "invalid fields");
         return;
@@ -719,7 +719,7 @@ hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr,
 
         if (zend_hash_find(Z_ARRVAL_P(options), "filter",
                            sizeof("filter"), (void **)&tmp) == SUCCESS) {
-            filter = hs_zval_to_comma_array(*tmp);
+            filter = hs_zval_to_comma_array(*tmp TSRMLS_CC);
         }
     }
 
