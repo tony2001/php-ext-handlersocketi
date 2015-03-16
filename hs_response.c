@@ -341,6 +341,7 @@ int hs_response_multi(php_stream *stream, long timeout, zval *return_value, zval
     if (len <= 0) {
         efree(recv);
         RETVAL_BOOL(0);
+        return len;
     }
 
     count = zend_hash_num_elements(HASH_OF(mreq));
