@@ -54,7 +54,7 @@ hs_response_select(php_stream *stream, long timeout TSRMLS_DC)
 static inline long
 hs_response_recv(php_stream *stream, long timeout, char *recv, size_t size TSRMLS_DC)
 {
-    long ret;
+    size_t ret = 0;
 #ifdef HS_DEBUG
     long i;
     smart_str debug = {0};
@@ -62,8 +62,8 @@ hs_response_recv(php_stream *stream, long timeout, char *recv, size_t size TSRML
 
 retry:
 
-    ret = php_stream_read(stream, recv, size);
-    if (ret <= 0) {
+    php_stream_get_line(stream, recv, size, &ret);
+    if (ret == 0) {
 		if (errno == EAGAIN) {
 			errno = 0;
 			if (hs_response_select(stream, timeout TSRMLS_CC) < 0) {
