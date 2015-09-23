@@ -2,7 +2,7 @@
 #include "php.h"
 #include "php_ini.h"
 #include "php_streams.h"
-#include "ext/standard/php_smart_str.h"
+#include "ext/standard/php_smart_string.h"
 #include "Zend/zend_exceptions.h"
 
 #include "php_verdep.h"
@@ -54,34 +54,36 @@ const zend_function_entry hs_methods[] = {
     ZEND_FE_END
 };
 
+static inline hs_obj_t *php_hs(zend_object *obj) {
+	return (hs_obj_t *)((char*)(obj) - XtOffsetOf(hs_obj_t, std));
+}
+
+#define HS_OBJ(zv, obj)													\
+	obj = php_hs(Z_OBJ_P(zv));											\
+	if (!(obj)) {														\
+		HS_EXCEPTION("The HandlerSocketi object has not been correctly initialized by its constructor"); \
+		RETURN_FALSE;													\
+	}
+
 static void
-hs_object_free_storage(void *object TSRMLS_DC)
+hs_object_free_storage(zend_object *object)
 {
-    hs_obj_t *intern = (hs_obj_t *)object;
-    zend_object_std_dtor(&intern->std TSRMLS_CC);
+    hs_obj_t *intern = php_hs(object);
+    zend_object_std_dtor(&intern->std);
 
     if (intern->conn && !intern->conn->is_persistent) {
-		zend_list_delete(intern->conn->rsrc_id);
+		zend_list_delete(intern->conn->rsrc);
     }
 
-    if (intern->server) {
-        zval_ptr_dtor(&intern->server);
-    }
-
-    if (intern->auth) {
-        zval_ptr_dtor(&intern->auth);
-    }
-
-    if (intern->error) {
-        zval_ptr_dtor(&intern->error);
-    }
+	zval_ptr_dtor(&intern->server);
+	zval_ptr_dtor(&intern->auth);
+	zval_ptr_dtor(&intern->error);
 
 	efree(intern->hashkey);
-    efree(object);
 }
 
 #define HS_EXCEPTION(...)                                                                                  \
-    zend_throw_exception_ex(handlersocketi_get_ce_exception(), 0 TSRMLS_CC, "HandlerSocketi::" __VA_ARGS__)
+    zend_throw_exception_ex(handlersocketi_get_ce_exception(), 0, "HandlerSocketi::" __VA_ARGS__)
 
 #define HS_CHECK_OBJECT(object, classname)                        \
 	if (!(object)) {                                              \
@@ -95,55 +97,37 @@ hs_object_free_storage(void *object TSRMLS_DC)
 		RETURN_FALSE;                                             \
 	}
 
-static inline zend_object_value
-hs_object_new_ex(zend_class_entry *ce, hs_obj_t **ptr TSRMLS_DC)
+static inline zend_object *hs_object_new_ex(zend_class_entry *ce, hs_obj_t **ptr)
 {
-    hs_obj_t *intern;
-    zend_object_value retval;
-#if ZEND_MODULE_API_NO < 20100525
-    zval *tmp;
-#endif
+	hs_obj_t *intern;
 
-    intern = emalloc(sizeof(hs_obj_t));
-    memset(intern, 0, sizeof(hs_obj_t));
-    if (ptr) {
-        *ptr = intern;
-    }
+	intern = emalloc(sizeof(hs_obj_t));
+	memset(intern, 0, sizeof(hs_obj_t));
+	if (ptr) {
+		*ptr = intern;
+	}
 
-    zend_object_std_init(&intern->std, ce TSRMLS_CC);
+	zend_object_std_init(&intern->std, ce);
+	object_properties_init(&intern->std, ce);
 
-#if ZEND_MODULE_API_NO >= 20100525
-    object_properties_init(&intern->std, ce);
-#else
-    zend_hash_copy(intern->std.properties, &ce->default_properties,
-                   (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));
-#endif
+	intern->std.handlers = &hs_object_handlers;
 
-    retval.handle = zend_objects_store_put(
-        intern, (zend_objects_store_dtor_t)zend_objects_destroy_object,
-        (zend_objects_free_object_storage_t)hs_object_free_storage,
-        NULL TSRMLS_CC);
-    retval.handlers = &hs_object_handlers;
-
-    intern->timeout = 0;
-    intern->server = NULL;
-    intern->auth = NULL;
-    intern->error = NULL;
-    return retval;
+	intern->timeout = 0;
+	ZVAL_NULL(&intern->server);
+	ZVAL_NULL(&intern->auth);
+	ZVAL_NULL(&intern->error);
+	return &intern->std;
 }
 
-static inline int
-hs_object_connection(hs_obj_t *obj TSRMLS_DC)
+static inline int hs_object_connection(hs_obj_t *obj)
 {
-    char *hashkey = NULL;
-    char *errstr = NULL;
-    int err;
-    struct timeval tv;
+	char *hashkey = NULL;
+	struct timeval tv;
 
-    if (obj->timeout > 0) {
-        tv.tv_sec = obj->timeout;
-        tv.tv_usec = 0;
-    }
+	if (obj->timeout > 0) {
+		tv.tv_sec = obj->timeout;
+		tv.tv_usec = 0;
+	}
 
 	if (obj->conn->is_persistent) {
 		php_stream *stream;
@@ -151,7 +135,7 @@ hs_object_connection(hs_obj_t *obj TSRMLS_DC)
 		spprintf(&hashkey, 0, "stream:%s", obj->hashkey);
 
 		/* this code is copied from main/streams/transports.c with small modifications */
-		switch(php_stream_from_persistent_id(hashkey, &stream TSRMLS_CC)) {
+		switch(php_stream_from_persistent_id(hashkey, &stream)) {
 			case PHP_STREAM_PERSISTENT_SUCCESS:
 				/* use a 0 second timeout when checking if the socket
 				 * has already died */
@@ -176,70 +160,47 @@ hs_object_connection(hs_obj_t *obj TSRMLS_DC)
 		zend_hash_clean(&obj->conn->open_indices);
 	}
 
-    obj->conn->stream = php_stream_xport_create(Z_STRVAL_P(obj->server),
-                                          Z_STRLEN_P(obj->server),
-                                          ENFORCE_SAFE_MODE|REPORT_ERRORS,
-                                          STREAM_XPORT_CLIENT|
-                                          STREAM_XPORT_CONNECT,
-                                          hashkey, &tv, NULL, &errstr, &err);
+	obj->conn->stream = php_stream_xport_create(Z_STRVAL_P(&obj->server), Z_STRLEN_P(&obj->server), REPORT_ERRORS, STREAM_XPORT_CLIENT|STREAM_XPORT_CONNECT, hashkey, &tv, NULL, NULL, NULL);
 
 	if (hashkey) {
 		efree(hashkey);
 	}
 
-    if (!obj->conn->stream) {
-        if (errstr) {
-            efree(errstr);
-        }
-        return FAILURE;
-    }
+	if (!obj->conn->stream) {
+		return FAILURE;
+	}
 
-    if (errstr) {
-        efree(errstr);
-    }
-
-    /* non-blocking */
-    if (php_stream_set_option(obj->conn->stream, PHP_STREAM_OPTION_BLOCKING, 0, NULL) == -1) {
-        zend_error(E_WARNING, "HandlerSocketi: failed to turn on non-blocking mode");
-    }
+	/* non-blocking */
+	if (php_stream_set_option(obj->conn->stream, PHP_STREAM_OPTION_BLOCKING, 0, NULL) == -1) {
+		php_error_docref(NULL, E_WARNING, "HandlerSocketi: failed to turn on non-blocking mode");
+	}
 
 	php_stream_auto_cleanup(obj->conn->stream);
-    return SUCCESS;
+	return SUCCESS;
 }
 
-static inline zend_object_value
-hs_object_new(zend_class_entry *ce TSRMLS_DC)
+static inline zend_object *hs_object_new(zend_class_entry *ce)
 {
-    return hs_object_new_ex(ce, NULL TSRMLS_CC);
+	return hs_object_new_ex(ce, NULL);
 }
 
-static inline zend_object_value
-hs_object_clone(zval *this_ptr TSRMLS_DC)
+static inline zend_object *hs_object_clone(zval *this_ptr)
 {
-    hs_obj_t *new_obj = NULL;
-    hs_obj_t *old_obj =
-        (hs_obj_t *)zend_object_store_get_object(this_ptr TSRMLS_CC);
-    zend_object_value new_ov = hs_object_new_ex(old_obj->std.ce,
-                                                &new_obj TSRMLS_CC);
+	hs_obj_t *new_obj = NULL;
+	hs_obj_t *old_obj = php_hs(Z_OBJ_P(this_ptr));
+	zend_object *new_ov = hs_object_new_ex(old_obj->std.ce, &new_obj);
 
-    zend_objects_clone_members(&new_obj->std, new_ov, &old_obj->std,
-                               Z_OBJ_HANDLE_P(this_ptr) TSRMLS_CC);
+	zend_objects_clone_members(new_ov, Z_OBJ_P(this_ptr));
 
-    new_obj->timeout = old_obj->timeout;
+	new_obj->timeout = old_obj->timeout;
 
-    MAKE_STD_ZVAL(new_obj->server);
-    *new_obj->server = *old_obj->server;
-    zval_copy_ctor(new_obj->server);
+	ZVAL_COPY_VALUE(&new_obj->server, &old_obj->server);
+	zval_copy_ctor(&new_obj->server);
 
-    if (old_obj->auth) {
-        MAKE_STD_ZVAL(new_obj->auth);
-        *new_obj->auth = *old_obj->auth;
-        zval_copy_ctor(new_obj->auth);
-    } else {
-        new_obj->auth = NULL;
-    }
+	ZVAL_COPY_VALUE(&new_obj->auth, &old_obj->auth);
+	zval_copy_ctor(&new_obj->auth);
 
-    new_obj->error = NULL;
+	ZVAL_NULL(&new_obj->error);
 	new_obj->hashkey_len = old_obj->hashkey_len;
 	new_obj->hashkey = estrdup(old_obj->hashkey);
 
@@ -249,168 +210,161 @@ hs_object_clone(zval *this_ptr TSRMLS_DC)
 		new_obj->conn = ecalloc(1, sizeof(hs_conn_t));
 		zend_hash_init(&new_obj->conn->open_indices, 16, NULL, NULL, 0);
 
-		hs_object_connection(new_obj TSRMLS_CC);
+		hs_object_connection(new_obj);
 	}
-    return new_ov;
+	return new_ov;
 }
 
-PHP_HANDLERSOCKETI_API int
-handlersocketi_register_class(TSRMLS_D)
+PHP_HANDLERSOCKETI_API int handlersocketi_register_class()
 {
-    zend_class_entry ce;
+	zend_class_entry ce;
 
-    INIT_CLASS_ENTRY(ce, "HandlerSocketi", hs_methods);
+	INIT_CLASS_ENTRY(ce, "HandlerSocketi", hs_methods);
+	ce.create_object = hs_object_new;
 
-    ce.create_object = hs_object_new;
-
-    hs_ce = zend_register_internal_class(&ce TSRMLS_CC);
-    if (hs_ce == NULL) {
-        return FAILURE;
-    }
-
-    memcpy(&hs_object_handlers, zend_get_std_object_handlers(),
-           sizeof(zend_object_handlers));
-
-    hs_object_handlers.clone_obj = hs_object_clone;
-
-    return SUCCESS;
-}
-
-PHP_HANDLERSOCKETI_API zend_class_entry
-*handlersocketi_get_ce(void)
-{
-    return hs_ce;
-}
-
-PHP_HANDLERSOCKETI_API php_stream
-*handlersocketi_object_store_get_stream(zval *link TSRMLS_DC)
-{
-    hs_obj_t *hs;
-
-    hs = (hs_obj_t *)zend_object_store_get_object(link TSRMLS_CC);
-    if (hs && hs->conn) {
-        return hs->conn->stream;
-    } else {
-        return NULL;
-    }
-}
-
-PHP_HANDLERSOCKETI_API long
-handlersocketi_object_store_get_timeout(zval *link TSRMLS_DC)
-{
-    hs_obj_t *hs;
-
-    hs = (hs_obj_t *)zend_object_store_get_object(link TSRMLS_CC);
-    if (hs) {
-        return hs->timeout;
-    } else {
-        return 0;
-    }
-}
-
-PHP_HANDLERSOCKETI_API int
-handlersocketi_object_store_get_index_id(zval *link, const char *hash_index, int hash_index_len TSRMLS_DC)
-{
-    hs_obj_t *hs;
-	int *old_id;
-
-    hs = (hs_obj_t *)zend_object_store_get_object(link TSRMLS_CC);
-    if (hs && hs->conn) {
-		if (zend_hash_find(&hs->conn->open_indices, hash_index, hash_index_len+1, (void **)&old_id) == SUCCESS) {
-			return *old_id;
-		}
-    }
-	return -1;
-}
-
-PHP_HANDLERSOCKETI_API int
-handlersocketi_object_store_get_index_hash(const char *db, int db_len, const char *table, int table_len, zval *fields, zval *options, char **hash_index_str, int *hash_index_len TSRMLS_DC)
-{
-	smart_str hash_index = {0};
-	char *index = NULL;
-	zval *filter = NULL, *fields_str;
-	int index_len;
-
-    fields_str = hs_zval_to_comma_string(fields);
-	if (!fields_str) {
+	hs_ce = zend_register_internal_class(&ce);
+	if (hs_ce == NULL) {
 		return FAILURE;
 	}
 
-	smart_str_appendl(&hash_index, db, db_len);
-	smart_str_appendc(&hash_index, '|');
+	memcpy(&hs_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
+	hs_object_handlers.dtor_obj = zend_objects_destroy_object;
+	hs_object_handlers.free_obj = hs_object_free_storage;
+	hs_object_handlers.clone_obj = hs_object_clone;
+	hs_object_handlers.offset = XtOffsetOf(hs_obj_t, std);
+	return SUCCESS;
+}
 
-	smart_str_appendl(&hash_index, table, table_len);
-	smart_str_appendc(&hash_index, '|');
+PHP_HANDLERSOCKETI_API zend_class_entry *handlersocketi_get_ce(void)
+{
+	return hs_ce;
+}
+
+PHP_HANDLERSOCKETI_API php_stream *handlersocketi_object_store_get_stream(zval *link)
+{
+	hs_obj_t *hs;
+
+	hs = php_hs(Z_OBJ_P(link));
+	if (hs && hs->conn) {
+		return hs->conn->stream;
+	} else {
+		return NULL;
+	}
+}
+
+PHP_HANDLERSOCKETI_API long handlersocketi_object_store_get_timeout(zval *link)
+{
+	hs_obj_t *hs;
+
+	hs = php_hs(Z_OBJ_P(link));
+	if (hs) {
+		return hs->timeout;
+	} else {
+		return 0;
+	}
+}
+
+PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_id(zval *link, const char *hash_index, size_t hash_index_len)
+{
+	hs_obj_t *hs;
+	size_t *old_id;
+
+	hs = php_hs(Z_OBJ_P(link));
+	if (hs && hs->conn) {
+		old_id = zend_hash_str_find_ptr(&hs->conn->open_indices, hash_index, hash_index_len);
+		if (old_id) {
+			return *old_id;
+		}
+	}
+	return -1;
+}
+
+PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_hash(const char *db, size_t db_len, const char *table, size_t table_len, zval *fields, zval *options, char **hash_index_str, size_t *hash_index_len)
+{
+	smart_string hash_index = {0};
+	char *index = NULL;
+	zval filter, fields_str;
+	size_t index_len;
+
+	ZVAL_NULL(&filter);
+
+	hs_zval_to_comma_string(fields, &fields_str);
+
+	smart_string_appendl(&hash_index, db, db_len);
+	smart_string_appendc(&hash_index, '|');
+
+	smart_string_appendl(&hash_index, table, table_len);
+	smart_string_appendc(&hash_index, '|');
 
 	if (options) {
-		zval **tmp;
+		zval *tmp;
 
-        if (zend_hash_find(Z_ARRVAL_P(options), "index", sizeof("index"), (void **)&tmp) == SUCCESS) {
-			index = Z_STRVAL_PP(tmp);
-			index_len = Z_STRLEN_PP(tmp);
+		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "index", sizeof("index") - 1);
+		if (tmp) {
+			index = Z_STRVAL_P(tmp);
+			index_len = Z_STRLEN_P(tmp);
 			if (!index_len) {
 				zval_ptr_dtor(&fields_str);
-				smart_str_free(&hash_index);
+				smart_string_free(&hash_index);
 				return FAILURE;
 			}
-        }
+		}
 
-        if (zend_hash_find(Z_ARRVAL_P(options), "filter", sizeof("filter"), (void **)&tmp) == SUCCESS) {
-            filter = hs_zval_to_comma_array(*tmp);
-        }
+		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "filter", sizeof("filter") - 1);
+		if (tmp) {
+			hs_zval_to_comma_array(tmp, &filter);
+		}
 	}
 
-    if (!index) {
-		smart_str_appendl(&hash_index, "PRIMARY", sizeof("PRIMARY")-1);
+	if (!index) {
+		smart_string_appendl(&hash_index, "PRIMARY", sizeof("PRIMARY")-1);
 	} else {
-		smart_str_appendl(&hash_index, index, index_len);
+		smart_string_appendl(&hash_index, index, index_len);
 	}
-	smart_str_appendc(&hash_index, '|');
+	smart_string_appendc(&hash_index, '|');
 
 	/* make sure we're case insensitive */
-	zend_str_tolower(Z_STRVAL_P(fields_str), Z_STRLEN_P(fields_str));
-	smart_str_appendl(&hash_index, Z_STRVAL_P(fields_str), Z_STRLEN_P(fields_str));
-	smart_str_appendc(&hash_index, '|');
+	zend_str_tolower(Z_STRVAL_P(&fields_str), Z_STRLEN_P(&fields_str));
+	smart_string_appendl(&hash_index, Z_STRVAL_P(&fields_str), Z_STRLEN_P(&fields_str));
+	smart_string_appendc(&hash_index, '|');
 
-    if (filter) {
-		zval **tmp;
-		HashTable *ht;
-		HashPosition pos;
+	if (Z_TYPE_P(&filter) == IS_ARRAY) {
+		zval *tmp;
 		long n, i = 0;
 
-		ht = HASH_OF(filter);
-		n = zend_hash_num_elements(ht);
+		n = zend_hash_num_elements(HASH_OF(&filter));
 		if (n >= 0) {
-			smart_str_appendc(&hash_index, '|');
+			smart_string_appendc(&hash_index, '|');
 
-			zend_hash_internal_pointer_reset_ex(ht, &pos);
-			while (zend_hash_get_current_data_ex(ht, (void **)&tmp, &pos) == SUCCESS) {
-				switch (Z_TYPE_PP(tmp)) {
+			zend_hash_internal_pointer_reset(HASH_OF(&filter));
+			while ((tmp = zend_hash_get_current_data(HASH_OF(&filter))) != NULL) {
+				switch (Z_TYPE_P(tmp)) {
 					case IS_STRING:
-						smart_str_appendl(&hash_index, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
+						smart_string_appendl(&hash_index, Z_STRVAL_P(tmp), Z_STRLEN_P(tmp));
 						break;
 					case IS_LONG:
-						smart_str_append_long(&hash_index, Z_LVAL_PP(tmp));
+						smart_string_append_long(&hash_index, Z_LVAL_P(tmp));
 						break;
 					default:
-						convert_to_string_ex(tmp);
-						smart_str_appendl(&hash_index, Z_STRVAL_PP(tmp), Z_STRLEN_PP(tmp));
+						{
+							zend_string *tmp_str = zval_get_string(tmp);
+							smart_string_appendl(&hash_index, tmp_str->val, tmp_str->len);
+							zend_string_release(tmp_str);
+						}
 						break;
 				}
 
 				if (++i != n) {
-					smart_str_appendc(&hash_index, '|');
+					smart_string_appendc(&hash_index, '|');
 				}
-				zend_hash_move_forward_ex(ht, &pos);
+				zend_hash_move_forward(HASH_OF(&filter));
 			}
 		}
-    }
-
-	smart_str_0(&hash_index);
-	zval_ptr_dtor(&fields_str);
-	if (filter) {
-		zval_ptr_dtor(&filter);
 	}
+
+	smart_string_0(&hash_index);
+	zval_ptr_dtor(&fields_str);
+	zval_ptr_dtor(&filter);
 
 	*hash_index_str = hash_index.c;
 	*hash_index_len = hash_index.len;
@@ -418,76 +372,91 @@ handlersocketi_object_store_get_index_hash(const char *db, int db_len, const cha
 	return SUCCESS;
 }
 
-PHP_HANDLERSOCKETI_API int
-handlersocketi_object_store_store_index_id(zval *link, const char *hash_index, int hash_index_len, int id TSRMLS_DC)
+PHP_HANDLERSOCKETI_API int handlersocketi_object_store_store_index_id(zval *link, const char *hash_index, size_t hash_index_len, size_t id)
 {
-    hs_obj_t *hs;
+	hs_obj_t *hs;
 
-    hs = (hs_obj_t *)zend_object_store_get_object(link TSRMLS_CC);
-    if (hs && hs->conn) {
-		return zend_hash_update(&hs->conn->open_indices, hash_index, hash_index_len + 1, (void *)&id, sizeof(int), NULL);
-    }
+	hs = php_hs(Z_OBJ_P(link));
+	if (hs && hs->conn) {
+		zend_hash_str_update_mem(&hs->conn->open_indices, hash_index, hash_index_len, (void *)&id, sizeof(size_t));
+		return SUCCESS;
+	}
+	return FAILURE;
+}
+
+PHP_HANDLERSOCKETI_API int handlersocketi_object_store_remove_index(zval *link, const char *hash_index, size_t hash_index_len)
+{
+	hs_obj_t *hs;
+
+	hs = php_hs(Z_OBJ_P(link));
+	if (hs && hs->conn) {
+		size_t *id = zend_hash_str_find_ptr(&hs->conn->open_indices, hash_index, hash_index_len);
+		if (id) {
+			zend_hash_str_del(&hs->conn->open_indices, hash_index, hash_index_len);
+			efree(id);
+		}
+		return SUCCESS;
+	}
 	return FAILURE;
 }
 
 ZEND_METHOD(HandlerSocketi, __construct)
 {
-    char *server, *host = NULL;
-    int is_persistent = 0, server_len, host_len = 0;
-    long port = -1;
-    zval *options = NULL;
-    hs_obj_t *hs;
+	char *server, *host = NULL;
+	size_t is_persistent = 0, server_len, host_len = 0;
+	long port = -1;
+	zval *options = NULL;
+	hs_obj_t *hs;
 	hs_conn_t *conn = NULL;
-	zend_rsrc_list_entry *le, new_le;
+	zend_resource *le, new_le;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "sl|z", &host, &host_len, &port, &options) == FAILURE) {
-        zval *object = getThis();
-        ZVAL_NULL(object);
-        return;
-    }
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "sl|z", &host, &host_len, &port, &options) == FAILURE) {
+		return;
+	}
 
-    if (!host || host_len <= 0) {
+	if (!host || host_len <= 0) {
 		HS_EXCEPTION("__construct(): no host name");
-        zval *object = getThis();
-        ZVAL_NULL(object);
-        return;
-    }
+		return;
+	}
 
-    if (port > 0) {
-        server_len = spprintf(&server, 0, "%s:%ld", host, port);
-    } else {
-        server_len = spprintf(&server, 0, "%s", host);
-    }
+	if (port > 0) {
+		server_len = spprintf(&server, 0, "%s:%ld", host, port);
+	} else {
+		server_len = spprintf(&server, 0, "%s", host);
+	}
 
-    hs = (hs_obj_t *)zend_object_store_get_object(getThis() TSRMLS_CC);
-    HS_CHECK_OBJECT(hs, HandlerSocketi);
+	HS_OBJ(getThis(), hs);
+	HS_CHECK_OBJECT(hs, HandlerSocketi);
 
-    MAKE_STD_ZVAL(hs->server);
-    ZVAL_STRINGL(hs->server, server, server_len, 0);
+	ZVAL_STRINGL(&hs->server, server, server_len);
 
 	hs->hashkey_len = spprintf(&hs->hashkey, 0, "hsi:%s", server);
-    hs->timeout = HS_STREAM_DEFAULT_TIMEOUT;
+	hs->timeout = HS_STREAM_DEFAULT_TIMEOUT;
+	efree(server);
 
-    if (options && Z_TYPE_P(options) == IS_ARRAY) {
-        zval **tmp;
-        if (zend_hash_find(Z_ARRVAL_P(options), "timeout", sizeof("timeout"), (void **)&tmp) == SUCCESS) {
-            convert_to_long_ex(tmp);
-            hs->timeout = Z_LVAL_PP(tmp);
-        }
+	if (options && Z_TYPE_P(options) == IS_ARRAY) {
+		zval *tmp;
+		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "timeout", sizeof("timeout") - 1);
+		if (tmp) {
+			hs->timeout = zval_get_long(tmp);
+		}
 
-        if (zend_hash_find(Z_ARRVAL_P(options), "persistent", sizeof("persistent"), (void **)&tmp) == SUCCESS) {
-            convert_to_boolean_ex(tmp);
-			is_persistent = Z_BVAL_PP(tmp);
-        }
-    }
+		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "persistent", sizeof("persistent") - 1);
+		if (tmp) {
+			is_persistent = zval_get_long(tmp);
+		}
+	}
 
 	if (is_persistent) {
+		zval *zv;
 		/* look for existing hash first */
-		if (zend_hash_find(&EG(persistent_list), hs->hashkey, hs->hashkey_len + 1, (void **) &le) == SUCCESS) {
+		zv = zend_hash_str_find(&EG(persistent_list), hs->hashkey, hs->hashkey_len);
+		if (zv && Z_RES_P(zv)) {
+			le = Z_RES_P(zv);
 			if (le->type == le_hs_pconn && le->ptr) {
 				conn = (hs_conn_t *)le->ptr;
 			} else {
-				zend_hash_del(&EG(persistent_list), hs->hashkey, hs->hashkey_len + 1);
+				zend_hash_str_del(&EG(persistent_list), hs->hashkey, hs->hashkey_len);
 			}
 		}
 
@@ -500,108 +469,104 @@ ZEND_METHOD(HandlerSocketi, __construct)
 			new_le.ptr = conn;
 			new_le.type = le_hs_pconn;
 
-			zend_hash_update(&EG(persistent_list), hs->hashkey, hs->hashkey_len + 1, (void *) &new_le, sizeof(zend_rsrc_list_entry), NULL);
+			zend_hash_str_update_mem(&EG(persistent_list), hs->hashkey, hs->hashkey_len, (void *) &new_le, sizeof(zend_resource));
 		}
 	} else {
 		/* open indices hash is private for every non-persistent connection */
 		conn = pemalloc(sizeof(hs_conn_t), 0);
 		conn->is_persistent = 0;
 		zend_hash_init(&conn->open_indices, 16, NULL, NULL, 0);
-		conn->rsrc_id = zend_list_insert(conn, le_hs_conn TSRMLS_CC);
+		conn->rsrc = zend_register_resource(conn, le_hs_conn);
 	}
 	hs->conn = conn;
 
-    if (hs_object_connection(hs TSRMLS_CC) != SUCCESS) {
-		HS_EXCEPTION("__construct(): unable to connect to %s", Z_STRVAL_P(hs->server));
-        zval *object = getThis();
-        ZVAL_NULL(object);
+	if (hs_object_connection(hs) != SUCCESS) {
+		HS_EXCEPTION("__construct(): unable to connect to %s", Z_STRVAL_P(&hs->server));
 		return;
-    }
+	}
 }
 
 ZEND_METHOD(HandlerSocketi, auth)
 {
-    char *key, *type = NULL;
-    int key_len, type_len = 0;
-    hs_obj_t *hs;
-    smart_str request = {0};
+	char *key, *type = NULL;
+	size_t key_len, type_len = 0;
+	hs_obj_t *hs;
+	smart_string request = {0};
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|s", &key, &key_len, &type, &type_len) == FAILURE) {
-        RETURN_FALSE;
-    }
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "s|s", &key, &key_len, &type, &type_len) == FAILURE) {
+		RETURN_FALSE;
+	}
 
-    if (key_len <= 0) {
-        RETURN_FALSE;
-    }
+	if (key_len <= 0) {
+		RETURN_FALSE;
+	}
 
-    /* handerlsocket: object */
-    hs = (hs_obj_t *)zend_object_store_get_object(getThis() TSRMLS_CC);
-    HS_CHECK_OBJECT(hs, HandlerSocketi);
-    HS_CHECK_CONNECTION(hs, HandlerSocketi);
+	/* handerlsocket: object */
+	HS_OBJ(getThis(), hs);
+	HS_CHECK_OBJECT(hs, HandlerSocketi);
+	HS_CHECK_CONNECTION(hs, HandlerSocketi);
 
-    MAKE_STD_ZVAL(hs->auth);
-    ZVAL_STRINGL(hs->auth, key, key_len, 1);
+	ZVAL_STRINGL(&hs->auth, key, key_len);
 
-    /* auth */
-    hs_request_string(&request, HS_PROTOCOL_AUTH, 1);
-    hs_request_delim(&request);
-    hs_request_string(&request, "1", 1);
-    hs_request_delim(&request);
-    hs_request_string(&request, Z_STRVAL_P(hs->auth), Z_STRLEN_P(hs->auth));
-    hs_request_next(&request);
+	/* auth */
+	hs_request_string(&request, HS_PROTOCOL_AUTH, 1);
+	hs_request_delim(&request);
+	hs_request_string(&request, "1", 1);
+	hs_request_delim(&request);
+	hs_request_string(&request, Z_STRVAL_P(&hs->auth), Z_STRLEN_P(&hs->auth));
+	hs_request_next(&request);
 
-    /* request: send */
-    if (hs_request_send(hs->conn->stream, &request TSRMLS_CC) < 0) {
-        ZVAL_BOOL(return_value, 0);
-    } else {
-        zval *retval;
-        MAKE_STD_ZVAL(retval);
+	/* request: send */
+	if (hs_request_send(hs->conn->stream, &request) < 0) {
+		ZVAL_BOOL(return_value, 0);
+	} else {
+		zval retval;
 
-        /* response */
-        hs_response_value(hs->conn->stream, hs->timeout, retval, NULL, 0 TSRMLS_CC);
-        if (Z_TYPE_P(retval) == IS_BOOL && Z_LVAL_P(retval) == 1) {
-            ZVAL_BOOL(return_value, 1);
-        } else {
-            ZVAL_BOOL(return_value, 0);
-        }
+		/* response */
+		hs_response_value(hs->conn->stream, hs->timeout, &retval, NULL, 0);
+		if (Z_TYPE_P(&retval) == IS_TRUE) {
+			ZVAL_BOOL(return_value, 1);
+		} else {
+			ZVAL_BOOL(return_value, 0);
+		}
 
-        zval_ptr_dtor(&retval);
-    }
+		zval_ptr_dtor(&retval);
+	}
 
-    smart_str_free(&request);
+	smart_string_free(&request);
 }
 
 ZEND_METHOD(HandlerSocketi, open_index)
 {
-    char *db, *table;
-    int db_len, table_len;
-    zval *fields, *options = NULL;
+	char *db, *table;
+	size_t db_len, table_len;
+	zval *fields, *options = NULL;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssz|z", &db, &db_len, &table, &table_len, &fields, &options) == FAILURE) {
-        return;
-    }
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "ssz|z", &db, &db_len, &table, &table_len, &fields, &options) == FAILURE) {
+		return;
+	}
 
-    handlersocketi_create_index(return_value, getThis(), db, db_len, table, table_len, fields, options TSRMLS_CC);
+	handlersocketi_create_index(return_value, getThis(), db, db_len, table, table_len, fields, options);
 }
 
 ZEND_METHOD(HandlerSocketi, has_open_index)
 {
 	char *db, *table;
-	int db_len, table_len, hash_index_len, ret, id;
+	size_t db_len, table_len, hash_index_len, ret, id;
 	zval *fields, *options = NULL;
 	char *hash_index;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ssz|z", &db, &db_len, &table, &table_len, &fields, &options) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "ssz|z", &db, &db_len, &table, &table_len, &fields, &options) == FAILURE) {
 		return;
 	}
 
-	ret = handlersocketi_object_store_get_index_hash(db, db_len, table, table_len, fields, options, &hash_index, &hash_index_len TSRMLS_CC);
+	ret = handlersocketi_object_store_get_index_hash(db, db_len, table, table_len, fields, options, &hash_index, &hash_index_len);
 	if (ret != SUCCESS) {
 		HS_EXCEPTION("has_open_index(): invalid index parameters passed");
 		RETURN_FALSE;
 	}
 
-	id = handlersocketi_object_store_get_index_id(getThis(), hash_index, hash_index_len TSRMLS_CC);
+	id = handlersocketi_object_store_get_index_id(getThis(), hash_index, hash_index_len);
 	efree(hash_index);
 	if (id < 0) {
 		RETURN_FALSE;
