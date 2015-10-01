@@ -208,7 +208,7 @@ static inline zend_object *hs_object_clone(zval *this_ptr)
 		new_obj->conn = old_obj->conn;
 	} else {
 		new_obj->conn = ecalloc(1, sizeof(hs_conn_t));
-		zend_hash_init(&new_obj->conn->open_indices, 16, NULL, NULL, 0);
+		zend_hash_init(&new_obj->conn->open_indices, 16, NULL, ZVAL_PTR_DTOR, 0);
 
 		hs_object_connection(new_obj);
 	}
@@ -267,13 +267,13 @@ PHP_HANDLERSOCKETI_API long handlersocketi_object_store_get_timeout(zval *link)
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_id(zval *link, const char *hash_index, size_t hash_index_len)
 {
 	hs_obj_t *hs;
-	size_t *old_id;
+	zval *old_id;
 
 	hs = php_hs(Z_OBJ_P(link));
 	if (hs && hs->conn) {
-		old_id = zend_hash_str_find_ptr(&hs->conn->open_indices, hash_index, hash_index_len);
+		old_id = zend_hash_str_find(&hs->conn->open_indices, hash_index, hash_index_len);
 		if (old_id) {
-			return *old_id;
+			return Z_LVAL_P(old_id);
 		}
 	}
 	return -1;
@@ -378,7 +378,9 @@ PHP_HANDLERSOCKETI_API int handlersocketi_object_store_store_index_id(zval *link
 
 	hs = php_hs(Z_OBJ_P(link));
 	if (hs && hs->conn) {
-		zend_hash_str_update_mem(&hs->conn->open_indices, hash_index, hash_index_len, (void *)&id, sizeof(size_t));
+		zval tmp;
+		ZVAL_LONG(&tmp, id);
+		zend_hash_str_update(&hs->conn->open_indices, hash_index, hash_index_len, &tmp);
 		return SUCCESS;
 	}
 	return FAILURE;
@@ -390,10 +392,9 @@ PHP_HANDLERSOCKETI_API int handlersocketi_object_store_remove_index(zval *link, 
 
 	hs = php_hs(Z_OBJ_P(link));
 	if (hs && hs->conn) {
-		size_t *id = zend_hash_str_find_ptr(&hs->conn->open_indices, hash_index, hash_index_len);
+		zval *id = zend_hash_str_find(&hs->conn->open_indices, hash_index, hash_index_len);
 		if (id) {
 			zend_hash_str_del(&hs->conn->open_indices, hash_index, hash_index_len);
-			efree(id);
 		}
 		return SUCCESS;
 	}
@@ -464,7 +465,7 @@ ZEND_METHOD(HandlerSocketi, __construct)
 		if (conn == NULL) {
 			conn = pemalloc(sizeof(hs_conn_t), 1);
 			conn->is_persistent = 1;
-			zend_hash_init(&conn->open_indices, 16, NULL, NULL, 1);
+			zend_hash_init(&conn->open_indices, 16, NULL, ZVAL_PTR_DTOR, 1);
 
 			new_le.ptr = conn;
 			new_le.type = le_hs_pconn;
@@ -475,7 +476,7 @@ ZEND_METHOD(HandlerSocketi, __construct)
 		/* open indices hash is private for every non-persistent connection */
 		conn = pemalloc(sizeof(hs_conn_t), 0);
 		conn->is_persistent = 0;
-		zend_hash_init(&conn->open_indices, 16, NULL, NULL, 0);
+		zend_hash_init(&conn->open_indices, 16, NULL, ZVAL_PTR_DTOR, 0);
 		conn->rsrc = zend_register_resource(conn, le_hs_conn);
 	}
 	hs->conn = conn;

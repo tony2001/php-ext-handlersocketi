@@ -588,7 +588,6 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 		if (tmp) {
 			zend_string *index_str = zval_get_string(tmp);
 			ZVAL_STR(&index, index_str);
-			zend_string_release(index_str);
 		}
 
 		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "filter", sizeof("filter") - 1);
