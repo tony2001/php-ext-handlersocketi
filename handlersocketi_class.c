@@ -553,7 +553,8 @@ ZEND_METHOD(HandlerSocketi, open_index)
 ZEND_METHOD(HandlerSocketi, has_open_index)
 {
 	char *db, *table;
-	size_t db_len, table_len, hash_index_len, ret, id;
+	size_t db_len, table_len, hash_index_len;
+	int ret, id;
 	zval *fields, *options = NULL;
 	char *hash_index;
 
