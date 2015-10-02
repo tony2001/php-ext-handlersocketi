@@ -493,6 +493,9 @@ static inline void hs_array_to_in_filter(HashTable *ht, zval *filter, zval *filt
 	zend_string *key;
 	zend_ulong key_index;
 
+	ZVAL_NULL(filters);
+	ZVAL_NULL(in_values);
+
 	if (!filter) {
 		return;
 	}
@@ -828,7 +831,6 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 	HS_CHECK_OBJECT(hsi, HandlerSocketi_Index);
 	HS_ERROR_RESET(hsi->error);
 
-	ZVAL_NULL(&filters);
 	/* options */
 	if (options != NULL && Z_TYPE_P(options) == IS_ARRAY) {
 		/* limit */
@@ -839,6 +841,9 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 		safe = hs_is_options_safe(HASH_OF(options));
 		/* in, fiter, while */
 		hs_array_to_in_filter(HASH_OF(options), &hsi->filter, &filters, &in_key, &in_values);
+	} else {
+		ZVAL_NULL(&filters);
+		ZVAL_NULL(&in_values);
 	}
 
 	/* stream */
@@ -852,6 +857,8 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 	ZVAL_NULL(&operate);
 	if (hs_zval_to_operate_criteria(query, &operate, &criteria, HS_FIND_EQUAL) != SUCCESS) {
 		zval_ptr_dtor(&operate);
+		zval_ptr_dtor(&filters);
+		zval_ptr_dtor(&in_values);
 		RETURN_FALSE;
 	}
 
@@ -865,6 +872,7 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 	if (hs_request_send(stream, &request) < 0) {
 		zval_ptr_dtor(&operate);
 		zval_ptr_dtor(&filters);
+		zval_ptr_dtor(&in_values);
 		smart_string_free(&request);
 		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to send request");
 		RETURN_FALSE;
@@ -875,6 +883,7 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 
 	zval_ptr_dtor(&operate);
 	zval_ptr_dtor(&filters);
+	zval_ptr_dtor(&in_values);
 	smart_string_free(&request);
 
 	if (res == -1) {
@@ -910,6 +919,7 @@ ZEND_METHOD(HandlerSocketi_Index, insert)
 
 	if (Z_TYPE_P(&args[0]) == IS_ARRAY) {
 		ZVAL_COPY_VALUE(&fields, &args[0]);
+		zval_copy_ctor(&fields);
 	} else {
 		array_init(&fields);
 
@@ -1016,9 +1026,6 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 	HS_CHECK_OBJECT(hsi, HandlerSocketi_Index);
 	HS_ERROR_RESET(hsi->error);
 
-	ZVAL_NULL(&filters);
-	ZVAL_NULL(&in_values);
-
 	if (options != NULL && Z_TYPE_P(options) == IS_ARRAY) {
 		/* limit */
 		limit = hs_get_options_long(HASH_OF(options), "limit", limit);
@@ -1028,11 +1035,16 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 		safe = hs_is_options_safe(HASH_OF(options));
 		/* in, fiter, while */
 		hs_array_to_in_filter(HASH_OF(options), &hsi->filter, &filters, &in_key, &in_values);
+	} else {
+		ZVAL_NULL(&filters);
+		ZVAL_NULL(&in_values);
 	}
 
 	/* stream */
 	stream = handlersocketi_object_store_get_stream(&hsi->link);
 	if (!stream) {
+		zval_ptr_dtor(&filters);
+		zval_ptr_dtor(&in_values);
 		RETURN_FALSE;
 	}
 	timeout = handlersocketi_object_store_get_timeout(&hsi->link);
@@ -1040,6 +1052,8 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 	/* operate : criteria */
 	if (hs_zval_to_operate_criteria(query, &operate, &criteria, HS_FIND_EQUAL) != SUCCESS) {
 		zval_ptr_dtor(&operate);
+		zval_ptr_dtor(&filters);
+		zval_ptr_dtor(&in_values);
 		RETURN_FALSE;
 	}
 
@@ -1047,6 +1061,8 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 	if (hs_zval_to_operate_criteria(update, &modify_operate, &modify_criteria, HS_MODIFY_UPDATE)  != SUCCESS) {
 		zval_ptr_dtor(&operate);
 		zval_ptr_dtor(&modify_operate);
+		zval_ptr_dtor(&filters);
+		zval_ptr_dtor(&in_values);
 		RETURN_FALSE;
 	}
 
@@ -1096,6 +1112,7 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 	zval_ptr_dtor(&operate);
 	zval_ptr_dtor(&modify_operate);
 	zval_ptr_dtor(&filters);
+	zval_ptr_dtor(&in_values);
 	smart_string_free(&request);
 
 	/* exception */
@@ -1135,7 +1152,11 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
 		safe = hs_is_options_safe(HASH_OF(options));
 		/* in, fiter, while */
 		hs_array_to_in_filter(HASH_OF(options), &hsi->filter, &filters, &in_key, &in_values);
+	} else {
+		ZVAL_NULL(&filters);
+		ZVAL_NULL(&in_values);
 	}
+
 
 	/* stream */
 	stream = handlersocketi_object_store_get_stream(&hsi->link);
@@ -1164,6 +1185,7 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
 	if (hs_request_send(stream, &request) < 0) {
 		zval_ptr_dtor(&operate);
 		zval_ptr_dtor(&filters);
+		zval_ptr_dtor(&in_values);
 		smart_string_free(&request);
 		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to send request");
 		RETURN_FALSE;
@@ -1184,6 +1206,7 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
 
 	zval_ptr_dtor(&operate);
 	zval_ptr_dtor(&filters);
+	zval_ptr_dtor(&in_values);
 	smart_string_free(&request);
 
 	/* exception */
@@ -1259,12 +1282,17 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 				limit = hs_get_options_long(HASH_OF(options), "limit", limit);
 				offset = hs_get_options_long(HASH_OF(options), "offset", offset);
 				hs_array_to_in_filter(HASH_OF(options), &hsi->filter, &filters, &in_key, &in_values);
+			} else {
+				ZVAL_NULL(&filters);
+				ZVAL_NULL(&in_values);
 			}
 
 			/* operate : criteria */
 			if (hs_zval_to_operate_criteria(query, &operate, &criteria, HS_FIND_EQUAL) != SUCCESS) {
 				err = -1;
 				zval_ptr_dtor(&operate);
+				zval_ptr_dtor(&filters);
+				zval_ptr_dtor(&in_values);
 				break;
 			}
 
@@ -1279,6 +1307,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 
 			zval_ptr_dtor(&operate);
 			zval_ptr_dtor(&filters);
+			zval_ptr_dtor(&in_values);
 		} else if (strncmp(method_str->val, "insert", strlen("insert")) == 0) {
 			/* method: insert */
 			zval operate, fields;
@@ -1377,11 +1406,16 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 				limit = hs_get_options_long(HASH_OF(options), "limit", limit);
 				offset = hs_get_options_long(HASH_OF(options), "offset", offset);
 				hs_array_to_in_filter(HASH_OF(options), &hsi->filter, &filters, &in_key, &in_values);
+			} else {
+				ZVAL_NULL(&filters);
+				ZVAL_NULL(&in_values);
 			}
 
 			/* operete : criteria */
 			if (hs_zval_to_operate_criteria(query, &operate, &criteria, HS_FIND_EQUAL) != SUCCESS) {
 				zval_ptr_dtor(&operate);
+				zval_ptr_dtor(&filters);
+				zval_ptr_dtor(&in_values);
 				err = -1;
 				break;
 			}
@@ -1402,6 +1436,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 
 			zval_ptr_dtor(&operate);
 			zval_ptr_dtor(&filters);
+			zval_ptr_dtor(&in_values);
 		} else if (strncmp(method_str->val, "update", strlen("update")) == 0) {
 			/* method: update */
 			zval *query, *update, *options;
@@ -1436,11 +1471,16 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 				limit = hs_get_options_long(HASH_OF(options), "limit", limit);
 				offset = hs_get_options_long(HASH_OF(options), "offset", offset);
 				hs_array_to_in_filter(HASH_OF(options), &hsi->filter, &filters, &in_key, &in_values);
+			} else {
+				ZVAL_NULL(&filters);
+				ZVAL_NULL(&in_values);
 			}
 
 			/* operete : criteria */
 			if (hs_zval_to_operate_criteria(query, &operate, &criteria, HS_FIND_EQUAL) != SUCCESS) {
 				zval_ptr_dtor(&operate);
+				zval_ptr_dtor(&filters);
+				zval_ptr_dtor(&in_values);
 				err = -1;
 				break;
 			}
@@ -1449,6 +1489,8 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 			if (hs_zval_to_operate_criteria(update, &modify_operate, &modify_criteria, HS_MODIFY_UPDATE) != SUCCESS) {
 				zval_ptr_dtor(&operate);
 				zval_ptr_dtor(&modify_operate);
+				zval_ptr_dtor(&filters);
+				zval_ptr_dtor(&in_values);
 				err = -1;
 				break;
 			}
@@ -1472,6 +1514,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 			zval_ptr_dtor(&operate);
 			zval_ptr_dtor(&modify_operate);
 			zval_ptr_dtor(&filters);
+			zval_ptr_dtor(&in_values);
 		} else {
 			err = -1;
 			break;
