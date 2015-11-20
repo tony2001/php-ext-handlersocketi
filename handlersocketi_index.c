@@ -201,8 +201,7 @@ static inline zend_object *hs_index_object_new_ex(zend_class_entry *ce, hs_index
 {
 	hs_index_obj_t *intern;
 
-	intern = emalloc(sizeof(hs_index_obj_t));
-	memset(intern, 0, sizeof(hs_index_obj_t));
+	intern = ecalloc(1, sizeof(hs_index_obj_t) + zend_object_properties_size(ce));
 	if (ptr) {
 		*ptr = intern;
 	}
