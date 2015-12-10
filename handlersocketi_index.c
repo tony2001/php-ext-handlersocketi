@@ -32,8 +32,8 @@ typedef struct hs_index_obj {
 	zval filter;
 	zval link;
 	zval error;
-	zend_object std;
 	char *hash;
+	zend_object std;
 } hs_index_obj_t;
 
 	ZEND_BEGIN_ARG_INFO_EX(arginfo_hs_index_method__construct, 0, 0, 4)
