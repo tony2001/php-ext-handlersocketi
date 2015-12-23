@@ -272,16 +272,15 @@ void hs_zval_to_comma_string(zval *val, zval *retval)
 	if (Z_TYPE_P(val) == IS_ARRAY) {
 		zval *tmp;
 
-		zend_hash_internal_pointer_reset(HASH_OF(val));
-		while ((tmp = zend_hash_get_current_data(HASH_OF(val))) != NULL) {
+		ZEND_HASH_FOREACH_VAL_IND(HASH_OF(val), tmp) {
 			zend_string *str = zval_get_string(tmp);
 			if (str->len > 0) {
 				smart_string_appendl(&comma, str->val, str->len);
 				smart_string_appendl(&comma, ",", strlen(","));
 			}
-			zend_hash_move_forward(HASH_OF(val));
 			zend_string_release(str);
-		}
+		} ZEND_HASH_FOREACH_END();
+
 		if (comma.len > 0) {
 			comma.len--;
 		}
@@ -378,29 +377,21 @@ static inline int hs_zval_to_operate_criteria(zval *query, zval *operate, zval *
 static inline void hs_zval_search_key(zval *value, zval *array, zval *return_value)
 {
 	zval *entry, res;
-	zend_ulong index;
+	zend_long index;
 	zend_string *key;
 	int (*is_equal_func)(zval *, zval *, zval *) = is_equal_function;
 
-	zend_hash_internal_pointer_reset(HASH_OF(array));
-	while ((entry = zend_hash_get_current_data(HASH_OF(array))) != NULL) {
+	ZEND_HASH_FOREACH_KEY_VAL_IND(HASH_OF(array), index, key, entry) {
 		is_equal_func(&res, value, entry);
 		if (Z_LVAL(res)) {
-			switch (zend_hash_get_current_key(HASH_OF(array), &key, &index)) {
-				case HASH_KEY_IS_STRING:
-					ZVAL_STR(return_value, zend_string_copy(key));
-					break;
-				case HASH_KEY_IS_LONG:
-					ZVAL_LONG(return_value, index);
-					break;
-				default:
-					ZVAL_NULL(return_value);
-					break;
+			if (key) {
+				ZVAL_STRINGL(return_value, key->val, key->len);
+			} else {
+				ZVAL_LONG(return_value, index);
 			}
 			return;
 		}
-		zend_hash_move_forward(HASH_OF(array));
-	}
+	} ZEND_HASH_FOREACH_END();
 	ZVAL_NULL(return_value);
 }
 
@@ -490,7 +481,6 @@ static inline void hs_array_to_in_filter(HashTable *ht, zval *filter, zval *filt
 {
 	zval *val;
 	zend_string *key;
-	zend_ulong key_index;
 
 	ZVAL_NULL(filters);
 	ZVAL_NULL(in_values);
@@ -499,13 +489,7 @@ static inline void hs_array_to_in_filter(HashTable *ht, zval *filter, zval *filt
 		return;
 	}
 
-	zend_hash_internal_pointer_reset(ht);
-	while ((val = zend_hash_get_current_data(ht)) != NULL) {
-		if (zend_hash_get_current_key(ht, &key, &key_index) != HASH_KEY_IS_STRING) {
-			zend_hash_move_forward(ht);
-			continue;
-		}
-
+	ZEND_HASH_FOREACH_STR_KEY_VAL(ht, key, val) {
 		if (strcmp(key->val, "in") == 0) {
 			/* in */
 			if (Z_TYPE_P(val) == IS_ARRAY) {
@@ -527,7 +511,7 @@ static inline void hs_array_to_in_filter(HashTable *ht, zval *filter, zval *filt
 							default:
 								{
 									zval key;
-									ZVAL_STR(&key, in_key_name);
+									ZVAL_STRINGL(&key, in_key_name->val, in_key_name->len);
 									*in_key = zval_get_long(&key);
 									zval_ptr_dtor(&key);
 									break;
@@ -550,9 +534,7 @@ static inline void hs_array_to_in_filter(HashTable *ht, zval *filter, zval *filt
 			/* while */
 			hs_zval_to_filter(filters, filter, val, HS_PROTOCOL_WHILE);
 		}
-
-		zend_hash_move_forward(ht);
-	}
+	} ZEND_HASH_FOREACH_END();
 }
 
 static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zval *link, char *db, int db_len, char *table, int table_len, zval *fields, zval *options)
@@ -618,8 +600,7 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 		return;
 	}
 
-	ZVAL_COPY_VALUE(&hsi->link, link);
-	zval_add_ref(&hsi->link);
+	ZVAL_COPY(&hsi->link, link);
 
 	/* id */
 	hsi->id = id;
@@ -632,7 +613,7 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 	ZVAL_STRINGL(&hsi->db, db, db_len);
 
 	/* table */
-	ZVAL_STRINGL(&hsi->table, table, db_len);
+	ZVAL_STRINGL(&hsi->table, table, table_len);
 
 	/* field */
 	if (Z_TYPE_P(fields) == IS_STRING) {
@@ -1237,26 +1218,24 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 
 	array_init(&mreq);
 
-	zend_hash_internal_pointer_reset(HASH_OF(args));
-	while ((val = zend_hash_get_current_data(HASH_OF(args))) != NULL) {
+	ZEND_HASH_FOREACH_VAL_IND(HASH_OF(args), val) {
 		zval *method;
-		zend_string *method_str;
+		char *method_str;
 
-		if (Z_TYPE_P(val) != IS_ARRAY) {
+		if (!val || Z_TYPE_P(val) != IS_ARRAY) {
 			err = -1;
 			break;
 		}
 
 		/* 0: method */
 		method = zend_hash_index_find(HASH_OF(val), 0);
-		if (!method) {
+		if (!method || Z_TYPE_P(method) != IS_STRING) {
 			err = -1;
 			break;
 		}
 
-		method_str = zval_get_string(method);
-
-		if (strncmp(method_str->val, "find", strlen("find")) == 0) {
+		method_str = Z_STRVAL_P(method);
+		if (strncmp(method_str, "find", strlen("find")) == 0) {
 			/* method: find */
 			zval *query, *options, operate, criteria;
 			zval filters, in_values;
@@ -1307,7 +1286,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 			zval_ptr_dtor(&operate);
 			zval_ptr_dtor(&filters);
 			zval_ptr_dtor(&in_values);
-		} else if (strncmp(method_str->val, "insert", strlen("insert")) == 0) {
+		} else if (strncmp(method_str, "insert", strlen("insert")) == 0) {
 			/* method: insert */
 			zval operate, fields;
 			zval *tmp;
@@ -1380,7 +1359,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 
 			zval_ptr_dtor(&operate);
 			zval_ptr_dtor(&fields);
-		} else if (strncmp(method_str->val, "remove", strlen("remove")) == 0) {
+		} else if (strncmp(method_str, "remove", strlen("remove")) == 0) {
 			/* method: remove */
 			zval *query, *options, operate, criteria;
 			zval filters, in_values;
@@ -1436,7 +1415,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 			zval_ptr_dtor(&operate);
 			zval_ptr_dtor(&filters);
 			zval_ptr_dtor(&in_values);
-		} else if (strncmp(method_str->val, "update", strlen("update")) == 0) {
+		} else if (strncmp(method_str, "update", strlen("update")) == 0) {
 			/* method: update */
 			zval *query, *update, *options;
 			zval operate, criteria, modify_operate, modify_criteria;
@@ -1519,8 +1498,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 			break;
 		}
 
-		zend_hash_move_forward(HASH_OF(args));
-	}
+	} ZEND_HASH_FOREACH_END();
 
 	/* stream */
 	stream = handlersocketi_object_store_get_stream(&hsi->link);
