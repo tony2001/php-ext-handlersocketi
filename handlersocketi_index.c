@@ -452,7 +452,7 @@ static inline void hs_zval_to_filter(zval *return_value, zval *filter, zval *val
 
 	tmp_str = zval_get_string(tmp);
 	add_next_index_str(&item, tmp_str);
-	zend_string_release(tmp_str);
+	/* zend_string_release(tmp_str); no release - added to the arr */
 
 	add_next_index_long(&item, Z_LVAL_P(&index));
 
@@ -465,7 +465,7 @@ static inline void hs_zval_to_filter(zval *return_value, zval *filter, zval *val
 	} else {
 		zend_string *vtmp_str = zval_get_string(vtmp);
 		add_next_index_str(&item, vtmp_str);
-		zend_string_release(vtmp_str);
+		/* zend_string_release(vtmp_str); no release - added to the arr */
 	}
 
 
