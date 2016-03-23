@@ -390,11 +390,8 @@ PHP_HANDLERSOCKETI_API int handlersocketi_object_store_remove_index(zval *link, 
 	hs_obj_t *hs;
 
 	hs = php_hs(Z_OBJ_P(link));
-	if (hs && hs->conn) {
-		zval *id = zend_hash_str_find(&hs->conn->open_indices, hash_index, hash_index_len);
-		if (id) {
-			zend_hash_str_del(&hs->conn->open_indices, hash_index, hash_index_len);
-		}
+	if (hs && hs->conn && zend_hash_num_elements(&hs->conn->open_indices) > 0) {
+		zend_hash_str_del(&hs->conn->open_indices, hash_index, hash_index_len);
 		return SUCCESS;
 	}
 	return FAILURE;
