@@ -711,7 +711,7 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 		res = hs_response_value(stream, timeout, &retval, &hsi->error, 0);
 
 		if (res == -1) {
-			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to open index '%s', server responded with: '%s'", Z_STRVAL_P(&fields_str), Z_STRVAL_P(&hsi->error));
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to open index '%s', server responded with: '%s'", Z_STRVAL_P(&fields_str), Z_TYPE_P(&hsi->error) != IS_STRING ? "Unknown error" : Z_STRVAL_P(&hsi->error));
 			goto cleanup;
 		}
 		if (res == -2) {
@@ -967,7 +967,7 @@ ZEND_METHOD(HandlerSocketi_Index, insert)
 		res = hs_response_value(stream, timeout, return_value, &hsi->error, 1);
 
 		if (res == -1) {
-			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to insert values, server responded with: '%s'", Z_STRVAL_P(&hsi->error));
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to insert values, server responded with: '%s'", Z_TYPE_P(&hsi->error) != IS_STRING ? "Unknown error" : Z_STRVAL_P(&hsi->error));
 			goto cleanup;
 		}
 		if (res == -2) {
