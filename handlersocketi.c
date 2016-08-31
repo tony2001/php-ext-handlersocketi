@@ -23,9 +23,11 @@ static void hs_init_globals(zend_handlersocketi_globals *hs_globals)
     hs_globals->id = 1;
 }
 
-static void hs_conn_dtor_ex(zend_resource *rsrc, int persistent TSRMLS_DC) /* {{{ */
+void hs_connection_dtor(hs_conn_t *conn)
 {
-	hs_conn_t *conn = (hs_conn_t *)rsrc->ptr;
+	if (!conn) {
+		return;
+	}
 
 	if (!conn->is_persistent && conn->stream) {
 		php_stream_close(conn->stream);
@@ -33,19 +35,13 @@ static void hs_conn_dtor_ex(zend_resource *rsrc, int persistent TSRMLS_DC) /* {{
 
 	zend_hash_clean(&conn->open_indices);
 	zend_hash_destroy(&conn->open_indices);
-	pefree(conn, persistent);
+	pefree(conn, conn->is_persistent);
 }
-/* }}} */
 
-static void hs_conn_dtor(zend_resource *rsrc TSRMLS_DC) /* {{{ */
+void hs_conn_dtor(zend_resource *rsrc TSRMLS_DC) /* {{{ */
 {
-	hs_conn_dtor_ex(rsrc, 0 TSRMLS_CC);
-}
-/* }}} */
-
-static void hs_pconn_dtor(zend_resource *rsrc TSRMLS_DC) /* {{{ */
-{
-	hs_conn_dtor_ex(rsrc, 1 TSRMLS_CC);
+	hs_conn_t *conn = (hs_conn_t *)rsrc->ptr;
+	hs_connection_dtor(conn);
 }
 /* }}} */
 
@@ -53,7 +49,7 @@ ZEND_MINIT_FUNCTION(handlersocketi)
 {
     ZEND_INIT_MODULE_GLOBALS(handlersocketi, hs_init_globals, NULL);
 
-	le_hs_pconn = zend_register_list_destructors_ex(NULL, hs_pconn_dtor, "HandlerSocketi persistent connection", module_number);
+	le_hs_pconn = zend_register_list_destructors_ex(NULL, hs_conn_dtor, "HandlerSocketi persistent connection", module_number);
 	le_hs_conn = zend_register_list_destructors_ex(hs_conn_dtor, NULL, "HandlerSocketi connection", module_number);
 
     handlersocketi_register_class(TSRMLS_C);

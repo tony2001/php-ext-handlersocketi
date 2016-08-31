@@ -26,6 +26,7 @@ PHP_HANDLERSOCKETI_API int handlersocketi_register_class();
 PHP_HANDLERSOCKETI_API zend_class_entry *handlersocketi_get_ce(void);
 
 PHP_HANDLERSOCKETI_API php_stream *handlersocketi_object_store_get_stream(zval *link);
+PHP_HANDLERSOCKETI_API void handlersocketi_object_store_close_conn(zval *link);
 PHP_HANDLERSOCKETI_API long handlersocketi_object_store_get_timeout(zval *link);
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_id(zval *link, const char *hash_index, size_t hash_index_len);
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_store_index_id(zval *link, const char *hash_index, size_t hash_index_len, size_t id);
