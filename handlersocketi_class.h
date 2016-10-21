@@ -32,5 +32,6 @@ PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_id(zval *link, 
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_store_index_id(zval *link, const char *hash_index, size_t hash_index_len, size_t id);
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_hash(const char *db, size_t db_len, const char *table, size_t table_len, zval *fields, zval *filter, char **hash_index_str, size_t *hash_index_len);
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_remove_index(zval *link, const char *hash_index, size_t hash_index_len);
+PHP_HANDLERSOCKETI_API void hs_conn_dtor(zend_resource *rsrc TSRMLS_DC);
 
 #endif /* HANDLERSOCKETI_CLASS_H */
