@@ -452,7 +452,7 @@ static inline void hs_zval_to_filter(zval *return_value, zval *filter, zval *val
 
 	tmp_str = zval_get_string(tmp);
 	add_next_index_str(&item, tmp_str);
-	zend_string_release(tmp_str);
+	/* zend_string_release(tmp_str); no release - added to the arr */
 
 	add_next_index_long(&item, Z_LVAL_P(&index));
 
@@ -465,7 +465,7 @@ static inline void hs_zval_to_filter(zval *return_value, zval *filter, zval *val
 	} else {
 		zend_string *vtmp_str = zval_get_string(vtmp);
 		add_next_index_str(&item, vtmp_str);
-		zend_string_release(vtmp_str);
+		/* zend_string_release(vtmp_str); no release - added to the arr */
 	}
 
 
@@ -571,7 +571,8 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "index", sizeof("index") - 1);
 		if (tmp) {
 			zend_string *index_str = zval_get_string(tmp);
-			ZVAL_STR(&index, index_str);
+			ZVAL_STRINGL(&index, ZSTR_VAL(index_str), ZSTR_LEN(index_str));
+			zend_string_release(index_str);
 		}
 
 		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "filter", sizeof("filter") - 1);
@@ -703,6 +704,8 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 		/* request: send */
 		if (hs_request_send(stream, &request) < 0) {
 			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to send request");
+			handlersocketi_object_store_close_conn(&hsi->link);
+			ZVAL_NULL(this_ptr);
 			goto cleanup;
 		}
 
@@ -710,17 +713,22 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 		res = hs_response_value(stream, timeout, &retval, &hsi->error, 0);
 
 		if (res == -1) {
-			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to open index '%s', server responded with: '%s'", Z_STRVAL_P(&fields_str), Z_STRVAL_P(&hsi->error));
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to open index '%s', server responded with: '%s'", Z_STRVAL_P(&fields_str), Z_TYPE_P(&hsi->error) != IS_STRING ? "Unknown error" : Z_STRVAL_P(&hsi->error));
+			handlersocketi_object_store_close_conn(&hsi->link);
+			ZVAL_NULL(this_ptr);
 			goto cleanup;
 		}
 		if (res == -2) {
 			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "timeout while reading server response");
+			handlersocketi_object_store_close_conn(&hsi->link);
+			ZVAL_NULL(this_ptr);
 			goto cleanup;
 		}
 
 		if (Z_TYPE_P(&retval) == IS_FALSE) {
 			zval_ptr_dtor(&retval);
 			HS_EXCEPTION("unable to open index: %d: %s", id, Z_TYPE_P(&hsi->error) != IS_STRING ? "Unknown error" : Z_STRVAL_P(&hsi->error));
+			ZVAL_NULL(this_ptr);
 			goto cleanup;
 		}
 		zval_ptr_dtor(&retval);
@@ -855,6 +863,7 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 		zval_ptr_dtor(&in_values);
 		smart_string_free(&request);
 		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to send request");
+		handlersocketi_object_store_close_conn(&hsi->link);
 		RETURN_FALSE;
 	} else {
 		/* response */
@@ -868,10 +877,12 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 
 	if (res == -1) {
 		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to read server response");
+		handlersocketi_object_store_close_conn(&hsi->link);
 		return;
 	}
 	if (res == -2) {
 		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "timeout while reading server response");
+		handlersocketi_object_store_close_conn(&hsi->link);
 		return;
 	}
 
@@ -958,6 +969,7 @@ ZEND_METHOD(HandlerSocketi_Index, insert)
 	if (hs_request_send(stream, &request) < 0) {
 		zval_ptr_dtor(&operate);
 		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to send request");
+		handlersocketi_object_store_close_conn(&hsi->link);
 		RETURN_FALSE;
 	} else {
 		/* response */
@@ -966,11 +978,13 @@ ZEND_METHOD(HandlerSocketi_Index, insert)
 		res = hs_response_value(stream, timeout, return_value, &hsi->error, 1);
 
 		if (res == -1) {
-			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to insert values, server responded with: '%s'", Z_STRVAL_P(&hsi->error));
+			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to insert values, server responded with: '%s'", Z_TYPE_P(&hsi->error) != IS_STRING ? "Unknown error" : Z_STRVAL_P(&hsi->error));
+			handlersocketi_object_store_close_conn(&hsi->link);
 			goto cleanup;
 		}
 		if (res == -2) {
 			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "timeout while when reading server response");
+			handlersocketi_object_store_close_conn(&hsi->link);
 			goto cleanup;
 		}
 
@@ -1069,6 +1083,7 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 		/* request: send */
 		if (hs_request_send(stream, &request) < 0) {
 			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to send request");
+			handlersocketi_object_store_close_conn(&hsi->link);
 			RETURN_FALSE;
 		} else {
 			int res;
@@ -1082,6 +1097,7 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 			}
 			if (res == -2) {
 				zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "timeout while reading server response");
+				handlersocketi_object_store_close_conn(&hsi->link);
 				return;
 			}
 		}
@@ -1169,6 +1185,7 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
 		zval_ptr_dtor(&in_values);
 		smart_string_free(&request);
 		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to send request");
+		handlersocketi_object_store_close_conn(&hsi->link);
 		RETURN_FALSE;
 	} else {
 		int res;
@@ -1182,6 +1199,7 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
 		}
 		if (res == -2) {
 			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "timeout while reading server response");
+			handlersocketi_object_store_close_conn(&hsi->link);
 			return;
 		}
 	}
@@ -1512,6 +1530,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 	/* request: send */
 	if (err < 0  || hs_request_send(stream, &request) < 0) {
 		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to send request");
+		handlersocketi_object_store_close_conn(&hsi->link);
 		smart_string_free(&request);
 		zval_ptr_dtor(&mreq);
 		RETURN_FALSE;
@@ -1524,7 +1543,8 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 	zval_ptr_dtor(&mreq);
 
 	if (res == -2) {
-		;		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "timeout while reading server response");
+		zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "timeout while reading server response");
+		handlersocketi_object_store_close_conn(&hsi->link);
 		return;
 	}
 }

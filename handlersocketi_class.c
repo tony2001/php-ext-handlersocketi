@@ -242,6 +242,21 @@ PHP_HANDLERSOCKETI_API zend_class_entry *handlersocketi_get_ce(void)
 	return hs_ce;
 }
 
+PHP_HANDLERSOCKETI_API void handlersocketi_object_store_close_conn(zval *link)
+{
+	hs_obj_t *hs;
+
+	hs = php_hs(Z_OBJ_P(link));
+	if (hs && hs->conn && hs->conn->stream) {
+		if (hs->conn->is_persistent) {
+			php_stream_pclose(hs->conn->stream);
+		} else {
+			php_stream_close(hs->conn->stream);
+		}
+		hs->conn->stream = NULL;
+	}
+}
+
 PHP_HANDLERSOCKETI_API php_stream *handlersocketi_object_store_get_stream(zval *link)
 {
 	hs_obj_t *hs;
@@ -393,11 +408,8 @@ PHP_HANDLERSOCKETI_API int handlersocketi_object_store_remove_index(zval *link, 
 	hs_obj_t *hs;
 
 	hs = php_hs(Z_OBJ_P(link));
-	if (hs && hs->conn) {
-		zval *id = zend_hash_str_find(&hs->conn->open_indices, hash_index, hash_index_len);
-		if (id) {
-			zend_hash_str_del(&hs->conn->open_indices, hash_index, hash_index_len);
-		}
+	if (hs && hs->conn && zend_hash_num_elements(&hs->conn->open_indices) > 0) {
+		zend_hash_str_del(&hs->conn->open_indices, hash_index, hash_index_len);
 		return SUCCESS;
 	}
 	return FAILURE;
@@ -462,6 +474,14 @@ ZEND_METHOD(HandlerSocketi, __construct)
 				conn = (hs_conn_t *)le->ptr;
 			} else {
 				zend_hash_str_del(&EG(persistent_list), hs->hashkey, hs->hashkey_len);
+			}
+		}
+
+		if (conn) {
+			/* check liveness */
+			if (php_stream_set_option(conn->stream, PHP_STREAM_OPTION_CHECK_LIVENESS, 0, NULL) == PHP_STREAM_OPTION_RETURN_ERR) {
+				hs_conn_dtor(le TSRMLS_CC);
+				conn = NULL;
 			}
 		}
 
