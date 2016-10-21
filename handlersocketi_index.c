@@ -1077,6 +1077,7 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 
 			if (res == -1) {
 				zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to read server response");
+				handlersocketi_object_store_close_conn(&hsi->link);
 				return;
 			}
 			if (res == -2) {
@@ -1176,6 +1177,7 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
 
 		if (res == -1) {
 			zend_throw_exception_ex(handlersocketi_get_ce_io_exception(), 0, "failed to read server response");
+			handlersocketi_object_store_close_conn(&hsi->link);
 			return;
 		}
 		if (res == -2) {
