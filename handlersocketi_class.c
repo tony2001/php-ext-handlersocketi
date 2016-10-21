@@ -85,6 +85,9 @@ hs_object_free_storage(zend_object *object)
 #define HS_EXCEPTION(...)                                                                                  \
     zend_throw_exception_ex(handlersocketi_get_ce_exception(), 0, "HandlerSocketi::" __VA_ARGS__)
 
+#define HS_EXCEPTION_EX(code, ...)                                                                                  \
+    zend_throw_exception_ex(handlersocketi_get_ce_exception(), code, "HandlerSocketi::" __VA_ARGS__)
+
 #define HS_CHECK_OBJECT(object, classname)                        \
 	if (!(object)) {                                              \
 		HS_EXCEPTION("The " #classname " object has not been correctly initialized by its constructor"); \
@@ -118,7 +121,7 @@ static inline zend_object *hs_object_new_ex(zend_class_entry *ce, hs_obj_t **ptr
 	return &intern->std;
 }
 
-static inline int hs_object_connection(hs_obj_t *obj)
+static inline int hs_object_connection(hs_obj_t *obj, zend_string **errstr, int *errc)
 {
 	char *hashkey = NULL;
 	struct timeval tv;
@@ -159,7 +162,7 @@ static inline int hs_object_connection(hs_obj_t *obj)
 		zend_hash_clean(&obj->conn->open_indices);
 	}
 
-	obj->conn->stream = php_stream_xport_create(Z_STRVAL_P(&obj->server), Z_STRLEN_P(&obj->server), REPORT_ERRORS, STREAM_XPORT_CLIENT|STREAM_XPORT_CONNECT, hashkey, &tv, NULL, NULL, NULL);
+	obj->conn->stream = php_stream_xport_create(Z_STRVAL_P(&obj->server), Z_STRLEN_P(&obj->server), REPORT_ERRORS, STREAM_XPORT_CLIENT|STREAM_XPORT_CONNECT, hashkey, &tv, NULL, errstr, errc);
 
 	if (hashkey) {
 		efree(hashkey);
@@ -209,7 +212,7 @@ static inline zend_object *hs_object_clone(zval *this_ptr)
 		new_obj->conn = ecalloc(1, sizeof(hs_conn_t));
 		zend_hash_init(&new_obj->conn->open_indices, 16, NULL, ZVAL_PTR_DTOR, 0);
 
-		hs_object_connection(new_obj);
+		hs_object_connection(new_obj, NULL, NULL);
 	}
 	return new_ov;
 }
@@ -409,6 +412,8 @@ ZEND_METHOD(HandlerSocketi, __construct)
 	hs_obj_t *hs;
 	hs_conn_t *conn = NULL;
 	zend_resource *le, new_le;
+	zend_string *errstr;
+	int errcode = 0;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS(), "sl|z", &host, &host_len, &port, &options) == FAILURE) {
 		return;
@@ -480,8 +485,8 @@ ZEND_METHOD(HandlerSocketi, __construct)
 	}
 	hs->conn = conn;
 
-	if (hs_object_connection(hs) != SUCCESS) {
-		HS_EXCEPTION("__construct(): unable to connect to %s", Z_STRVAL_P(&hs->server));
+	if (hs_object_connection(hs, &errstr, &errcode) != SUCCESS) {
+		HS_EXCEPTION_EX(errcode, "__construct(): unable to connect to %s: %s (%d)", Z_STRVAL_P(&hs->server), ZSTR_VAL(errstr), errcode);
 		return;
 	}
 }
