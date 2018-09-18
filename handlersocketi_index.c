@@ -179,15 +179,20 @@ if (!(obj)) {														\
 	zval_ptr_dtor(&error); \
 ZVAL_NULL(&error)
 
+static inline void hs_index_object_dtor(zend_object *object) {
+	hs_index_obj_t *intern = php_hs_index(object);
+	if (intern->hash) {
+		handlersocketi_object_store_remove_index(&intern->link, intern->hash, strlen(intern->hash));
+		efree(intern->hash);
+		intern->hash = NULL;
+	}
+}
+
 static inline void hs_index_object_free_storage(zend_object *object)
 {
 	hs_index_obj_t *intern = php_hs_index(object);
 	zend_object_std_dtor(&intern->std);
 
-	if (intern->hash) {
-		handlersocketi_object_store_remove_index(&intern->link, intern->hash, strlen(intern->hash));
-		efree(intern->hash);
-	}
 	zval_ptr_dtor(&intern->link);
 	zval_ptr_dtor(&intern->name);
 	zval_ptr_dtor(&intern->db);
@@ -765,7 +770,7 @@ PHP_HANDLERSOCKETI_API int handlersocketi_register_index()
 
 	memcpy(&hs_index_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	hs_index_object_handlers.clone_obj = hs_index_object_clone;
-	hs_index_object_handlers.dtor_obj = zend_objects_destroy_object;
+	hs_index_object_handlers.dtor_obj = hs_index_object_dtor;
 	hs_index_object_handlers.free_obj = hs_index_object_free_storage;
 	hs_index_object_handlers.offset = XtOffsetOf(hs_index_obj_t, std);
 	return SUCCESS;
