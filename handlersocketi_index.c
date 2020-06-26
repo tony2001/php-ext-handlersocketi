@@ -547,7 +547,7 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 	long id = 0, old_id;
 	zval index, fields_str, filter, retval;
 	php_stream *stream;
-	long timeout;
+	double timeout;
 	smart_string request = {0};
 	smart_string hash_index = {0};
 
@@ -652,7 +652,7 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 		ZVAL_NULL(this_ptr);
 		return;
 	}
-	timeout = handlersocketi_object_store_get_timeout(&hsi->link);
+	timeout = handlersocketi_object_store_get_rw_timeout(&hsi->link);
 
 	hs_request_string(&request, HS_PROTOCOL_OPEN, 1);
 	hs_request_delim(&request);
@@ -732,7 +732,7 @@ static inline void hs_index_object_init(hs_index_obj_t *hsi, zval *this_ptr, zva
 
 		if (Z_TYPE_P(&retval) == IS_FALSE) {
 			zval_ptr_dtor(&retval);
-			HS_EXCEPTION("unable to open index: %d: %s", id, Z_TYPE_P(&hsi->error) != IS_STRING ? "Unknown error" : Z_STRVAL_P(&hsi->error));
+			HS_EXCEPTION("unable to open index: %zd: %s", id, Z_TYPE_P(&hsi->error) != IS_STRING ? "Unknown error" : Z_STRVAL_P(&hsi->error));
 			ZVAL_NULL(this_ptr);
 			goto cleanup;
 		}
@@ -811,7 +811,7 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 	long in_key = -1;
 	hs_index_obj_t *hsi;
 	php_stream *stream;
-	long timeout;
+	double timeout;
 	smart_string request = {0};
 	int res = 0;
 
@@ -844,7 +844,7 @@ ZEND_METHOD(HandlerSocketi_Index, find)
 	if (!stream) {
 		RETURN_FALSE;
 	}
-	timeout = handlersocketi_object_store_get_timeout(&hsi->link);
+	timeout = handlersocketi_object_store_get_rw_timeout(&hsi->link);
 
 	/* operate : criteria */
 	ZVAL_NULL(&operate);
@@ -904,7 +904,7 @@ ZEND_METHOD(HandlerSocketi_Index, insert)
 	long i;
 	hs_index_obj_t *hsi;
 	php_stream *stream;
-	long timeout;
+	double timeout;
 	smart_string request = {0};
 	long fnum = 0;
 	int argc;
@@ -959,7 +959,7 @@ ZEND_METHOD(HandlerSocketi_Index, insert)
 	if (!stream) {
 		RETURN_FALSE;
 	}
-	timeout = handlersocketi_object_store_get_timeout(&hsi->link);
+	timeout = handlersocketi_object_store_get_rw_timeout(&hsi->link);
 
 	/* operate */
 	ZVAL_STRINGL(&operate, HS_PROTOCOL_INSERT, strlen(HS_PROTOCOL_INSERT));
@@ -1011,7 +1011,7 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 	long in_key = -1;
 	hs_index_obj_t *hsi;
 	php_stream *stream;
-	long timeout;
+	double timeout;
 	smart_string request = {0};
 	long fnum = 0;
 
@@ -1046,7 +1046,7 @@ ZEND_METHOD(HandlerSocketi_Index, update)
 		zval_ptr_dtor(&in_values);
 		RETURN_FALSE;
 	}
-	timeout = handlersocketi_object_store_get_timeout(&hsi->link);
+	timeout = handlersocketi_object_store_get_rw_timeout(&hsi->link);
 
 	/* operate : criteria */
 	if (hs_zval_to_operate_criteria(query, &operate, &criteria, HS_FIND_EQUAL) != SUCCESS) {
@@ -1133,7 +1133,7 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
 	long in_key = -1;
 	hs_index_obj_t *hsi;
 	php_stream *stream;
-	long timeout;
+	double timeout;
 	smart_string request = {0};
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS(), "z|z", &query, &options) == FAILURE) {
@@ -1165,7 +1165,7 @@ ZEND_METHOD(HandlerSocketi_Index, remove)
 	if (!stream) {
 		RETURN_FALSE;
 	}
-	timeout = handlersocketi_object_store_get_timeout(&hsi->link);
+	timeout = handlersocketi_object_store_get_rw_timeout(&hsi->link);
 
 	/* operate : criteria */
 	if (hs_zval_to_operate_criteria(query, &operate, &criteria, HS_FIND_EQUAL) != SUCCESS) {
@@ -1229,7 +1229,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 	int res;
 	hs_index_obj_t *hsi;
 	php_stream *stream;
-	long timeout;
+	double timeout;
 	smart_string request = {0};
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS(), "a", &args) == FAILURE) {
@@ -1530,7 +1530,7 @@ ZEND_METHOD(HandlerSocketi_Index, multi)
 	if (!stream) {
 		RETURN_FALSE;
 	}
-	timeout = handlersocketi_object_store_get_timeout(&hsi->link);
+	timeout = handlersocketi_object_store_get_rw_timeout(&hsi->link);
 
 	/* request: send */
 	if (err < 0  || hs_request_send(stream, &request) < 0) {

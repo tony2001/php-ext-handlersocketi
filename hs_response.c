@@ -14,7 +14,7 @@
 #include "win32/select.h"
 #endif
 
-static inline long hs_response_select(php_stream *stream, long timeout)
+static inline long hs_response_select(php_stream *stream, double timeout)
 {
 	php_socket_t max_fd = 0;
 	int retval, max_set_count = 0;
@@ -32,8 +32,10 @@ static inline long hs_response_select(php_stream *stream, long timeout)
 	PHP_SAFE_MAX_FD(max_fd, max_set_count);
 
 	if (timeout > 0) {
-		tv.tv_sec = timeout;
-		tv.tv_usec = 0;
+		double fraction, integral;
+		fraction = modf(timeout, &integral);
+		tv.tv_sec = (int)integral;
+		tv.tv_usec = (int)(fraction*1000000);
 		tv_p = &tv;
 	}
 
@@ -50,7 +52,7 @@ static inline long hs_response_select(php_stream *stream, long timeout)
 	return 0;
 }
 
-static inline long hs_response_recv(php_stream *stream, long timeout, char *recv, size_t size)
+static inline long hs_response_recv(php_stream *stream, double timeout, char *recv, size_t size)
 {
 	size_t ret = 0;
 #ifdef HS_DEBUG
@@ -95,7 +97,7 @@ static inline void hs_response_add(zval *return_value, zval *value)
 	add_next_index_zval(return_value, value);
 }
 
-int hs_response_value(php_stream *stream, long timeout, zval *return_value, zval *error, int modify)
+int hs_response_value(php_stream *stream, double timeout, zval *return_value, zval *error, int modify)
 {
 	char *recv;
 	long i, j, len;
@@ -311,7 +313,7 @@ int hs_response_value(php_stream *stream, long timeout, zval *return_value, zval
 	return 1;
 }
 
-int hs_response_multi(php_stream *stream, long timeout, zval *return_value, zval *error, zval *mreq)
+int hs_response_multi(php_stream *stream, double timeout, zval *return_value, zval *error, zval *mreq)
 {
 	char *recv;
 	long i, len, count;

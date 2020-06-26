@@ -9,7 +9,8 @@ typedef struct hs_hash {
 } hs_conn_t;
 
 typedef struct hs_obj {
-    long timeout;
+    double timeout;
+    double rw_timeout;
     zval server;
 	char *hashkey;
 	size_t hashkey_len;
@@ -27,7 +28,8 @@ PHP_HANDLERSOCKETI_API zend_class_entry *handlersocketi_get_ce(void);
 
 PHP_HANDLERSOCKETI_API php_stream *handlersocketi_object_store_get_stream(zval *link);
 PHP_HANDLERSOCKETI_API void handlersocketi_object_store_close_conn(zval *link);
-PHP_HANDLERSOCKETI_API long handlersocketi_object_store_get_timeout(zval *link);
+PHP_HANDLERSOCKETI_API double handlersocketi_object_store_get_timeout(zval *link);
+PHP_HANDLERSOCKETI_API double handlersocketi_object_store_get_rw_timeout(zval *link);
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_id(zval *link, const char *hash_index, size_t hash_index_len);
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_store_index_id(zval *link, const char *hash_index, size_t hash_index_len, size_t id);
 PHP_HANDLERSOCKETI_API int handlersocketi_object_store_get_index_hash(const char *db, size_t db_len, const char *table, size_t table_len, zval *fields, zval *filter, char **hash_index_str, size_t *hash_index_len);

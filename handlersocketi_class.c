@@ -16,7 +16,7 @@
 
 ZEND_EXTERN_MODULE_GLOBALS(handlersocketi);
 
-#define HS_STREAM_DEFAULT_TIMEOUT 5
+#define HS_STREAM_DEFAULT_TIMEOUT 5.0
 
 static zend_class_entry *hs_ce;
 static zend_object_handlers hs_object_handlers;
@@ -115,6 +115,7 @@ static inline zend_object *hs_object_new_ex(zend_class_entry *ce, hs_obj_t **ptr
 	intern->std.handlers = &hs_object_handlers;
 
 	intern->timeout = 0;
+	intern->rw_timeout = 0;
 	ZVAL_NULL(&intern->server);
 	ZVAL_NULL(&intern->auth);
 	ZVAL_NULL(&intern->error);
@@ -127,8 +128,10 @@ static inline int hs_object_connection(hs_obj_t *obj, zend_string **errstr, int 
 	struct timeval tv;
 
 	if (obj->timeout > 0) {
-		tv.tv_sec = obj->timeout;
-		tv.tv_usec = 0;
+		double fraction, integral;
+		fraction = modf(obj->timeout, &integral);
+		tv.tv_sec = (int)integral;
+		tv.tv_usec = (int)(fraction*1000000);
 	}
 
 	if (obj->conn->is_persistent) {
@@ -195,6 +198,7 @@ static inline zend_object *hs_object_clone(zval *this_ptr)
 	zend_objects_clone_members(new_ov, Z_OBJ_P(this_ptr));
 
 	new_obj->timeout = old_obj->timeout;
+	new_obj->rw_timeout = old_obj->rw_timeout;
 
 	ZVAL_COPY_VALUE(&new_obj->server, &old_obj->server);
 	zval_copy_ctor(&new_obj->server);
@@ -269,13 +273,25 @@ PHP_HANDLERSOCKETI_API php_stream *handlersocketi_object_store_get_stream(zval *
 	}
 }
 
-PHP_HANDLERSOCKETI_API long handlersocketi_object_store_get_timeout(zval *link)
+PHP_HANDLERSOCKETI_API double handlersocketi_object_store_get_timeout(zval *link)
 {
 	hs_obj_t *hs;
 
 	hs = php_hs(Z_OBJ_P(link));
 	if (hs) {
 		return hs->timeout;
+	} else {
+		return 0;
+	}
+}
+
+PHP_HANDLERSOCKETI_API double handlersocketi_object_store_get_rw_timeout(zval *link)
+{
+	hs_obj_t *hs;
+
+	hs = php_hs(Z_OBJ_P(link));
+	if (hs) {
+		return hs->rw_timeout;
 	} else {
 		return 0;
 	}
@@ -449,13 +465,19 @@ ZEND_METHOD(HandlerSocketi, __construct)
 
 	hs->hashkey_len = spprintf(&hs->hashkey, 0, "hsi:%s", server);
 	hs->timeout = HS_STREAM_DEFAULT_TIMEOUT;
+	hs->rw_timeout = HS_STREAM_DEFAULT_TIMEOUT;
 	efree(server);
 
 	if (options && Z_TYPE_P(options) == IS_ARRAY) {
 		zval *tmp;
 		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "timeout", sizeof("timeout") - 1);
 		if (tmp) {
-			hs->timeout = zval_get_long(tmp);
+			hs->timeout = zval_get_double(tmp);
+		}
+
+		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "rw_timeout", sizeof("rw_timeout") - 1);
+		if (tmp) {
+			hs->rw_timeout = zval_get_double(tmp);
 		}
 
 		tmp = zend_hash_str_find(Z_ARRVAL_P(options), "persistent", sizeof("persistent") - 1);
@@ -548,7 +570,7 @@ ZEND_METHOD(HandlerSocketi, auth)
 		zval retval;
 
 		/* response */
-		hs_response_value(hs->conn->stream, hs->timeout, &retval, NULL, 0);
+		hs_response_value(hs->conn->stream, hs->rw_timeout, &retval, NULL, 0);
 		if (Z_TYPE_P(&retval) == IS_TRUE) {
 			ZVAL_BOOL(return_value, 1);
 		} else {
